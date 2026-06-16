@@ -1,0 +1,42 @@
+{
+  "name": "telora",
+  "productName": "Telora",
+  "version": "1.0.0",
+  "description": "Telora — テロップ＆カットに特化した無料の動画エディタ（Mac / Windows）",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "keywords": [
+    "video",
+    "editor",
+    "telop",
+    "subtitle",
+    "ffmpeg",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.routinelabo.telora",
+    "productName": "Telora",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.video"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

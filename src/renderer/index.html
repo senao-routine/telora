@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob: file:; media-src 'self' blob: file: data:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Telop Cut Editor</title>
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 上部ツールバー -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" title="Telora">✦</span>
+        <span class="proj-name" id="projName">無題のプロジェクト</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn" id="btnImport" title="動画・画像を読み込む (Ctrl/Cmd+I)"><span class="ico">⬇</span> 素材読込</button>
+        <button class="btn" id="btnTranscribe" title="音声から文字起こししてテロップを自動生成"><span class="ico">🎙</span> 文字起こし</button>
+        <button class="btn" id="btnImportSrt" title="SRT字幕を取り込む">SRT</button>
+        <button class="btn" id="btnImportXml" title="編集データ(XML)を取り込む">XML</button>
+        <div class="sep"></div>
+        <button class="btn" id="btnOpen" title="プロジェクトを開く (Ctrl/Cmd+O)">開く</button>
+        <button class="btn" id="btnSave" title="プロジェクトを保存 (Ctrl/Cmd+S)">保存</button>
+        <div class="sep"></div>
+        <label class="reso-label">出力
+          <select id="resoSelect" class="select">
+            <option value="1920x1080">1080p (1920×1080)</option>
+            <option value="1280x720" selected>720p (1280×720)</option>
+            <option value="854x480">480p (854×480)</option>
+            <option value="1080x1920">縦 1080×1920</option>
+            <option value="720x1280">縦 720×1280</option>
+          </select>
+        </label>
+        <button class="btn btn-primary" id="btnExport" title="動画を書き出す (Ctrl/Cmd+E)"><span class="ico">⤴</span> 書き出し</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <!-- メディアビン -->
+      <aside class="library">
+        <div class="panel-head"><span>メディア</span><button class="mini-btn" id="btnLibImport" title="素材を追加">＋</button></div>
+        <div class="media-list" id="mediaList"></div>
+      </aside>
+
+      <!-- プレビュー -->
+      <section class="stage-area">
+        <div class="preview-wrap" id="previewWrap">
+          <div class="preview-stage" id="previewStage">
+            <video id="previewVideo" playsinline></video>
+            <canvas id="overlay"></canvas>
+            <div class="preview-status" id="previewStatus" hidden></div>
+            <div class="stage-empty" id="stageEmpty">
+              <div class="stage-empty-inner">
+                <div class="big-ico">🎬</div>
+                <p>素材を読み込んでタイムラインに追加してください</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="transport" id="transport">
+          <button class="tp-btn" id="btnToStart" title="先頭へ">⏮</button>
+          <button class="tp-btn" id="btnBack" title="1秒戻る">«</button>
+          <button class="tp-btn tp-play" id="btnPlay" title="再生 / 一時停止 (Space)">▶</button>
+          <button class="tp-btn" id="btnFwd" title="1秒進む">»</button>
+          <button class="tp-btn" id="btnToEnd" title="末尾へ">⏭</button>
+          <div class="time-readout"><span id="curTime">00:00.00</span><span class="time-sep">/</span><span id="totalTime">00:00.00</span></div>
+          <span class="kbd-hint">Space:再生 ／ ←→:コマ送り ／ S:分割 ／ A:前カット ／ D:後カット ／ Backspace:削除 ／ Alt+ドラッグ:複製</span>
+        </div>
+      </section>
+
+      <!-- インスペクタ -->
+      <aside class="inspector" id="inspector">
+        <div class="panel-head"><span id="inspectorTitle">プロパティ</span></div>
+        <div class="inspector-body" id="inspectorBody"></div>
+      </aside>
+    </main>
+
+    <!-- タイムライン -->
+    <section class="timeline-panel">
+      <div class="tl-resize" id="tlResize" title="ドラッグでタイムラインの高さを調整"></div>
+      <div class="timeline-toolbar">
+        <button class="tool-btn" id="btnUndo" title="元に戻す (Ctrl/Cmd+Z)"><span class="ico">↶</span> 戻す</button>
+        <button class="tool-btn" id="btnRedo" title="やり直し (Ctrl/Cmd+Shift+Z)"><span class="ico">↷</span> やり直し</button>
+        <div class="sep"></div>
+        <button class="tool-btn" id="btnSplit" title="再生位置で分割"><span class="ico">✂</span> 分割 <kbd>S</kbd></button>
+        <button class="tool-btn" id="btnCutBefore" title="再生位置より前をカット"><span class="ico">⟕</span> 前カット <kbd>A</kbd></button>
+        <button class="tool-btn" id="btnCutAfter" title="再生位置より後ろをカット"><span class="ico">⟖</span> 後カット <kbd>D</kbd></button>
+        <button class="tool-btn" id="btnDelete" title="選択を削除"><span class="ico">🗑</span> 削除 <kbd>⌫</kbd></button>
+        <div class="sep"></div>
+        <button class="tool-btn" id="btnAddTelop" title="テロップを追加 (Ctrl/Cmd+T)"><span class="ico">T</span> テロップ追加</button>
+        <button class="tool-btn" id="btnSelectAllTelops" title="全テロップを選択して一括編集"><span class="ico">▦</span> 全テロップ選択</button>
+        <div class="sep"></div>
+        <button class="tool-btn" id="btnAddTextLayer" title="テロップ層を追加">＋テロップ層</button>
+        <button class="tool-btn" id="btnAddImageLayer" title="画像(オーバーレイ)層を追加">＋画像層</button>
+        <button class="tool-btn" id="btnAddAudioLayer" title="音声層を追加">＋音声層</button>
+        <div class="spacer"></div>
+        <div class="zoom-ctl">
+          <button class="tool-btn" id="btnZoomOut" title="縮小">－</button>
+          <span class="zoom-label" id="zoomLabel">100%</span>
+          <button class="tool-btn" id="btnZoomIn" title="拡大">＋</button>
+          <button class="tool-btn" id="btnZoomFit" title="全体を表示">⤢</button>
+        </div>
+      </div>
+      <div class="timeline-body">
+        <div class="track-headers" id="trackHeaders"></div>
+        <div class="timeline-scroll" id="timelineScroll">
+          <div class="timeline-content" id="timelineContent">
+            <div class="ruler" id="ruler"></div>
+            <div class="tracks" id="tracks"></div>
+            <div class="playhead" id="playhead"><div class="playhead-knob"></div><div class="playhead-time" id="playheadTime">0:00</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="exportModal" hidden>
+    <div class="modal">
+      <h3 id="exportTitle">動画を書き出しています</h3>
+      <div class="progress"><div class="progress-bar" id="exportBar"></div></div>
+      <p class="progress-msg" id="exportMsg">準備中…</p>
+      <div class="modal-actions" id="exportActions"><button class="btn" id="btnCancelExport">キャンセル</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="js/error-collector.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

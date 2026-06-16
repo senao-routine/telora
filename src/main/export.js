@@ -1,0 +1,369 @@
+'use strict';
+
+const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// FFmpeg / FFprobe の解決。GUI 起動時はシェルの PATH を継承しないことがあるため、
+// 環境変数 → よくあるインストール先（Homebrew 等）→ 素の名前 の順で探す。
+function resolveBin(name) {
+  const envOverride = process.env[`${name.toUpperCase()}_PATH`];
+  if (envOverride) return envOverride;
+  if (process.platform === 'win32') return name;
+  const candidates = [
+    `/opt/homebrew/bin/${name}`, // Apple Silicon Homebrew
+    `/usr/local/bin/${name}`,    // Intel Homebrew / 手動
+    `/opt/local/bin/${name}`,    // MacPorts
+    `/usr/bin/${name}`,
+  ];
+  for (const c of candidates) { try { if (fs.existsSync(c)) return c; } catch (_) { /* noop */ } }
+  return name; // 最後は PATH に委ねる
+}
+const FFMPEG = resolveBin('ffmpeg');
+const FFPROBE = resolveBin('ffprobe');
+
+/**
+ * 指定コマンドを実行し、終了コード・stdout・stderr を返す。
+ */
+function run(cmd, args, { onStderr } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let proc;
+    try {
+      proc = spawn(cmd, args, { windowsHide: true });
+    } catch (err) {
+      resolve({ code: -1, stdout: '', stderr: String(err && err.message || err), spawnError: true });
+      return;
+    }
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => {
+      const s = d.toString();
+      stderr += s;
+      if (onStderr) onStderr(s);
+    });
+    proc.on('error', (err) => {
+      resolve({ code: -1, stdout, stderr: stderr + '\n' + String(err && err.message || err), spawnError: true });
+    });
+    proc.on('close', (code) => resolve({ code, stdout, stderr, proc }));
+    // 呼び出し側がキャンセルできるようハンドルを渡す
+    resolve._proc = proc;
+  });
+}
+
+/**
+ * ffmpeg / ffprobe が利用可能か確認する。
+ */
+async function checkTools() {
+  const result = { ffmpeg: false, ffprobe: false, version: '' };
+  try {
+    const r = await run(FFMPEG, ['-version']);
+    if (r.code === 0) {
+      result.ffmpeg = true;
+      const m = /ffmpeg version (\S+)/.exec(r.stdout);
+      result.version = m ? m[1] : '';
+    }
+  } catch (_) { /* noop */ }
+  try {
+    const r = await run(FFPROBE, ['-version']);
+    if (r.code === 0) result.ffprobe = true;
+  } catch (_) { /* noop */ }
+  return result;
+}
+
+/**
+ * 動画ファイルのメタ情報（長さ・解像度・fps・音声有無）を取得する。
+ */
+async function probe(filePath) {
+  const args = [
+    '-v', 'error',
+    '-print_format', 'json',
+    '-show_format',
+    '-show_streams',
+    filePath,
+  ];
+  const r = await run(FFPROBE, args);
+  if (r.code !== 0) {
+    return { ok: false, error: r.stderr || 'ffprobe failed' };
+  }
+  let data;
+  try {
+    data = JSON.parse(r.stdout);
+  } catch (e) {
+    return { ok: false, error: 'ffprobe 出力の解析に失敗しました' };
+  }
+  const streams = data.streams || [];
+  const v = streams.find((s) => s.codec_type === 'video');
+  const a = streams.find((s) => s.codec_type === 'audio');
+  let fps = 30;
+  if (v && v.r_frame_rate && v.r_frame_rate.includes('/')) {
+    const [n, d] = v.r_frame_rate.split('/').map(Number);
+    if (d > 0 && n > 0) fps = n / d;
+  }
+  const duration = parseFloat((data.format && data.format.duration) || (v && v.duration) || '0') || 0;
+  return {
+    ok: true,
+    duration,
+    width: v ? v.width : 0,
+    height: v ? v.height : 0,
+    fps: Math.round(fps * 1000) / 1000,
+    hasAudio: !!a,
+    hasVideo: !!v,
+  };
+}
+
+/**
+ * 指定時刻のフレームを PNG(dataURL) として抽出する。
+ * Chromium がデコードできないコーデック(HEVC 等)でもプレビューを表示するためのフォールバック。
+ */
+function extractFrame(filePath, time, width) {
+  return new Promise((resolve) => {
+    const w = Math.max(16, Math.round(width || 640));
+    const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, time || 0)), '-i', filePath,
+      '-frames:v', '1', '-vf', `scale=${w}:-2`, '-f', 'image2', '-c:v', 'png', 'pipe:1'];
+    let proc;
+    try { proc = spawn(FFMPEG, args, { windowsHide: true }); } catch (e) { resolve({ ok: false, error: String(e) }); return; }
+    const bufs = []; let err = '';
+    proc.stdout.on('data', (d) => bufs.push(d));
+    proc.stderr.on('data', (d) => { err += d.toString(); });
+    proc.on('error', (e) => resolve({ ok: false, error: String(e) }));
+    proc.on('close', (code) => {
+      if (code === 0 && bufs.length) resolve({ ok: true, dataUrl: 'data:image/png;base64,' + Buffer.concat(bufs).toString('base64') });
+      else resolve({ ok: false, error: err });
+    });
+  });
+}
+
+// probe 結果（音声有無）のキャッシュ
+const audioCache = new Map();
+async function sourceHasAudio(filePath) {
+  if (audioCache.has(filePath)) return audioCache.get(filePath);
+  const p = await probe(filePath);
+  const has = !!(p.ok && p.hasAudio);
+  audioCache.set(filePath, has);
+  return has;
+}
+
+function escFilterPath(p) {
+  // filter graph 内ではこの関数は使わない（パスは入力としてのみ渡すため）
+  return p;
+}
+
+/**
+ * data URL (image/png) を一時 PNG ファイルへ書き出す。
+ */
+function writeDataUrlPng(dataUrl, file) {
+  const idx = dataUrl.indexOf('base64,');
+  const b64 = idx >= 0 ? dataUrl.slice(idx + 7) : dataUrl;
+  fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+}
+
+/**
+ * タイムライン（複数レイヤ）を 1 本の動画へ書き出す。
+ *
+ * payload = {
+ *   output: { width, height, fps },
+ *   duration: number,                                  // タイムライン総尺(秒)
+ *   baseClips: [ { type:'video'|'image', path, in, out, start } ],  // メイントラック
+ *   overlays:  [ { dataUrl, start, end } ],            // 出力解像度のフルフレーム透過PNG（テロップ・オーバーレイ画像）
+ *   outputPath: string
+ * }
+ *
+ * 合成方針：メイントラックを「時間順セグメントの連結(concat)」で構築（隙間は黒＋無音で補填）。
+ * すべて pts 0 始まりに揃えることで overlay の framesync 問題を回避。最後にテロップ／オーバーレイ画像の
+ * フルフレーム透過 PNG を時間指定で重畳する。音声は各動画クリップの音声を連結（画像・隙間は無音）。
+ */
+async function exportTimeline(payload, onProgress, registerProc) {
+  const { output, baseClips = [], overlays = [], audioClips = [], outputPath } = payload;
+  if (baseClips.length === 0 && overlays.length === 0 && audioClips.length === 0) {
+    return { ok: false, error: '書き出す内容がありません。先に素材をタイムラインへ追加してください。' };
+  }
+
+  const W = Math.max(2, Math.round(output.width));
+  const H = Math.max(2, Math.round(output.height));
+  const FPS = output.fps && output.fps > 0 ? output.fps : 30;
+
+  // 総尺：payload 優先、無ければクリップ終端から算出
+  let DUR = payload.duration || 0;
+  for (const c of baseClips) DUR = Math.max(DUR, c.start + Math.max(0, c.out - c.in));
+  for (const o of overlays) DUR = Math.max(DUR, o.end);
+  for (const ac of audioClips) DUR = Math.max(DUR, ac.start + Math.max(0, ac.out - ac.in));
+  DUR = Math.max(0.1, DUR);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tce-export-'));
+  const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} };
+
+  try {
+    const inputArgs = [];
+    let inputIndex = 0;
+    const filterParts = [];
+
+    const SCALE_PAD = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+    const AFMT = 'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo';
+    const SILENCE = (d) => `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${d.toFixed(3)},asetpts=PTS-STARTPTS,${AFMT}`;
+
+    // ベースは「タイムライン順のセグメントを連結」して構築する。隙間は黒＋無音で埋め、
+    // すべて pts 0 始まりにして overlay の framesync 問題を回避する。
+    // 重なりはプレビュー(baseClipAtTime=先勝ち)と一致させるため、後発クリップの隠れる先頭分を詰める。
+    const sorted = [...baseClips].sort((a, b) => a.start - b.start);
+    const segs = [];
+    let cursor = 0;
+    for (const c of sorted) {
+      const cstart = Math.max(0, c.start);
+      const cend = cstart + Math.max(0, c.out - c.in);
+      if (cend <= cursor + 1e-3) continue;          // 先行クリップに完全に隠れる
+      const visStart = Math.max(cstart, cursor);
+      if (visStart > cursor + 1e-3) segs.push({ type: 'black', dur: visStart - cursor });
+      const effIn = c.in + (visStart - cstart);     // 重なりで隠れる先頭分をスキップ
+      segs.push({ type: c.type, clip: c, in: effIn, dur: Math.max(0.02, c.out - effIn) });
+      cursor = visStart + (c.out - effIn);
+    }
+    if (cursor < DUR - 1e-3) segs.push({ type: 'black', dur: DUR - cursor });
+    if (segs.length === 0) segs.push({ type: 'black', dur: DUR });
+
+    const concatLabels = [];
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i];
+      const dur = Math.max(0.02, seg.dur);
+      // concat 連結のため全セグメントを同一フォーマット(yuv420p/SAR1/fps)に揃える
+      const VFMT = `format=yuv420p,setsar=1,fps=${FPS}`;
+      if (seg.type === 'black') {
+        filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},${VFMT}[v${i}]`);
+        filterParts.push(`${SILENCE(dur)}[a${i}]`);
+      } else if (seg.type === 'image') {
+        const idx = inputIndex++;
+        inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', seg.clip.path);
+        filterParts.push(`[${idx}:v]${SCALE_PAD},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}[v${i}]`);
+        filterParts.push(`${SILENCE(dur)}[a${i}]`);
+      } else {
+        const c = seg.clip;
+        const inPt = seg.in != null ? seg.in : c.in; // 重なりスキップ後の実イン点
+        const idx = inputIndex++;
+        inputArgs.push('-i', c.path);
+        filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${SCALE_PAD},${VFMT}[v${i}]`);
+        // eslint-disable-next-line no-await-in-loop
+        if (await sourceHasAudio(c.path)) {
+          // 音声が映像より短い素材でも concat が破綻しないよう、セグメント尺まで無音パディング
+          filterParts.push(`[${idx}:a]atrim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},asetpts=PTS-STARTPTS,apad=whole_dur=${dur.toFixed(3)},${AFMT}[a${i}]`);
+        } else {
+          filterParts.push(`${SILENCE(dur)}[a${i}]`);
+        }
+      }
+      concatLabels.push(`[v${i}][a${i}]`);
+    }
+
+    // 連結
+    filterParts.push(`${concatLabels.join('')}concat=n=${segs.length}:v=1:a=1[basev][basea]`);
+
+    // フルフレーム PNG オーバーレイ（テロップ・オーバーレイ画像）。PNG は pts 0 始まりなので framesync 問題なし。
+    let prevV = 'basev';
+    for (let j = 0; j < overlays.length; j++) {
+      const ov = overlays[j];
+      const pngPath = path.join(tmpDir, `ov_${j}.png`);
+      writeDataUrlPng(ov.dataUrl, pngPath);
+      const s = Math.max(0, ov.start), e = Math.max(0, ov.end);
+      const animated = ov.anim && ov.anim !== 'none';
+      const idx = inputIndex++;
+      if (animated) {
+        // アニメーション付き：全尺ぶん読み込み（pts 0 始まり）、表示窓 [s,e] でアルファをフェード
+        const ad = Math.min(0.45, Math.max(0.05, (e - s) / 2));
+        inputArgs.push('-loop', '1', '-t', DUR.toFixed(3), '-i', pngPath);
+        filterParts.push(`[${idx}:v]fade=t=in:st=${s.toFixed(3)}:d=${ad.toFixed(3)}:alpha=1,fade=t=out:st=${(e - ad).toFixed(3)}:d=${ad.toFixed(3)}:alpha=1[ovin${j}]`);
+        filterParts.push(`[${prevV}][ovin${j}]overlay=0:0[ov${j}]`);
+      } else {
+        // 静止：単一フレーム＋時間ゲート（終端は排他 gte*lt）
+        inputArgs.push('-i', pngPath);
+        filterParts.push(`[${prevV}][${idx}:v]overlay=0:0:enable='gte(t\\,${s.toFixed(3)})*lt(t\\,${e.toFixed(3)})'[ov${j}]`);
+      }
+      prevV = `ov${j}`;
+    }
+
+    filterParts.push(`[${prevV}]format=yuv420p[vout]`);
+
+    // 音声トラックのクリップを base 音声へミックス
+    let audioOut = 'basea';
+    const audioClips = payload.audioClips || [];
+    if (audioClips.length) {
+      const aLabels = ['basea'];
+      for (let k = 0; k < audioClips.length; k++) {
+        const ac = audioClips[k];
+        const ms = Math.round(Math.max(0, ac.start) * 1000);
+        const vol = ac.volume != null ? ac.volume : 1;
+        const idx = inputIndex++;
+        inputArgs.push('-i', ac.path);
+        filterParts.push(`[${idx}:a]atrim=start=${ac.in.toFixed(3)}:end=${ac.out.toFixed(3)},asetpts=PTS-STARTPTS,volume=${vol.toFixed(3)},adelay=${ms}|${ms},${AFMT}[aclip${k}]`);
+        aLabels.push(`aclip${k}`);
+      }
+      filterParts.push(`${aLabels.map((l) => `[${l}]`).join('')}amix=inputs=${aLabels.length}:normalize=0:duration=longest[amixed]`);
+      audioOut = 'amixed';
+    }
+
+    const totalDuration = DUR;
+    const filterGraph = filterParts.join(';');
+    if (process.env.TCE_FILTER_DEBUG) console.error('FILTERGRAPH:\n' + filterGraph.replace(/;/g, ';\n'));
+
+    const args = [
+      '-y',
+      '-hide_banner',
+      ...inputArgs,
+      '-filter_complex', filterGraph,
+      '-map', '[vout]',
+      '-map', `[${audioOut}]`,
+      '-c:v', 'libx264',
+      '-preset', 'medium',
+      '-crf', '20',
+      '-pix_fmt', 'yuv420p',
+      '-r', String(FPS),
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-movflags', '+faststart',
+      '-t', DUR.toFixed(3),
+      outputPath,
+    ];
+
+    if (onProgress) onProgress(0, '書き出しを開始しています…');
+
+    const result = await new Promise((resolve) => {
+      let stderr = '';
+      let proc;
+      try {
+        proc = spawn(FFMPEG, args, { windowsHide: true });
+      } catch (err) {
+        resolve({ code: -1, stderr: String(err && err.message || err) });
+        return;
+      }
+      if (registerProc) registerProc(proc);
+      proc.stderr.on('data', (d) => {
+        const s = d.toString();
+        stderr += s;
+        // 進捗（time=00:00:12.34 を解析）
+        const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(s);
+        if (m && totalDuration > 0 && onProgress) {
+          const cur = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
+          const ratio = Math.min(0.999, cur / totalDuration);
+          onProgress(ratio, `書き出し中… ${Math.round(ratio * 100)}%`);
+        }
+      });
+      proc.on('error', (err) => resolve({ code: -1, stderr: stderr + '\n' + String(err && err.message || err) }));
+      proc.on('close', (code) => resolve({ code, stderr }));
+    });
+
+    if (result.code === 0) {
+      if (onProgress) onProgress(1, '完了');
+      cleanup();
+      return { ok: true, outputPath };
+    }
+
+    cleanup();
+    if (result.canceled) return { ok: false, canceled: true };
+    // stderr の末尾のみ返す（長すぎるため）
+    const tail = (result.stderr || '').split('\n').slice(-12).join('\n');
+    return { ok: false, error: `FFmpeg がエラーを返しました (code ${result.code})。\n${tail}` };
+  } catch (err) {
+    cleanup();
+    return { ok: false, error: String(err && err.stack || err) };
+  }
+}
+
+module.exports = { checkTools, probe, exportTimeline, extractFrame, FFMPEG, FFPROBE };
