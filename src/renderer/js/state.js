@@ -36,6 +36,8 @@ const state = {
     playing: false,
     projectPath: null,
     dirty: false,
+    tool: 'select',   // 'select' | 'range'
+    range: null,      // { start, end }
   },
 };
 
@@ -139,6 +141,14 @@ export function getZoom() { return state.ui.pxPerSec; }
 // ---- 再生状態 ----
 export function setPlaying(p) { state.ui.playing = p; emit('playing'); }
 export function isPlaying() { return state.ui.playing; }
+
+// ---- ツールモード / 範囲選択 ----
+export function getTool() { return state.ui.tool; }
+export function setTool(t) { state.ui.tool = t; if (t !== 'range') state.ui.range = null; emit('tool'); emit('range'); }
+export function toggleRangeTool() { setTool(state.ui.tool === 'range' ? 'select' : 'range'); }
+export function getRange() { return state.ui.range; }
+export function setRange(r) { state.ui.range = r; emit('range'); }
+export function clearRange() { state.ui.range = null; emit('range'); }
 
 // ---- トラック / クリップ計算 ----
 export function getTracks() { return state.project.tracks; }

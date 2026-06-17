@@ -3,7 +3,10 @@ import { initPreview, togglePlay, play, pause, seek } from './preview.js';
 import { initTimeline, zoomIn, zoomOut, zoomFit, ensurePlayheadVisible } from './timeline.js';
 import { initInspector } from './inspector.js';
 import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './media.js';
-import { splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter } from './edit.js';
+import {
+  splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, deleteSelectedRange,
+  copySelection, pasteClipboard, cutSelection, duplicateSelection,
+} from './edit.js';
 import { runExport } from './export-ui.js';
 import { saveProject, openProject, updateTitle } from './project-io.js';
 import { importSrtFromFile } from './import-srt.js';
@@ -12,6 +15,7 @@ import { runTranscribe } from './transcribe-ui.js';
 import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops,
+  getTool, setTool, toggleRangeTool,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -91,8 +95,12 @@ function wireTimelineToolbar() {
   $('btnCutBefore').onclick = cutBefore;
   $('btnCutAfter').onclick = cutAfter;
   $('btnDelete').onclick = deleteSelection;
+  $('btnRangeTool').onclick = () => toggleRangeTool();
+  $('btnDeleteRange').onclick = () => deleteSelectedRange();
+  on('tool', () => { const b = $('btnRangeTool'); if (b) b.classList.toggle('active', getTool() === 'range'); });
   $('btnAddTelop').onclick = () => addTelopAtPlayhead();
   $('btnSelectAllTelops').onclick = () => { selectAllTelops(); toast('全テロップを選択しました（右で一括編集）'); };
+  $('btnAddVideoLayer').onclick = () => { addTrack('video'); toast('動画層を追加しました（PIP・重ね合成）'); };
   $('btnAddTextLayer').onclick = () => { addTrack('text'); toast('テロップ層を追加しました'); };
   $('btnAddImageLayer').onclick = () => { addTrack('overlay'); toast('画像(オーバーレイ)層を追加しました'); };
   $('btnAddAudioLayer').onclick = () => { addTrack('audio'); toast('音声層を追加しました'); };
@@ -129,10 +137,15 @@ function wireKeyboard() {
   window.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey;
     const typing = isTyping(e);
-    if (typing && mod && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) return;
+    // テキスト編集中は標準のコピー/貼付/切取/Undo を OS に任せる
+    if (typing && mod && ['z', 'y', 'c', 'v', 'x'].includes(e.key.toLowerCase())) return;
 
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+    if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelection(); return; }   // コピー
+    if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }   // 貼り付け
+    if (mod && e.key.toLowerCase() === 'x') { e.preventDefault(); cutSelection(); return; }      // 切り取り
+    if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelection(); return; } // 複製
     if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveProject({ forceDialog: e.shiftKey }); return; }
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openProject(); return; }
     if (mod && e.key.toLowerCase() === 'e') { e.preventDefault(); runExport(); return; }
@@ -144,6 +157,8 @@ function wireKeyboard() {
     if (mod) return; // 単独キーのショートカットは修飾キー併用時は無効化
 
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
+    if (e.key.toLowerCase() === 'r') { e.preventDefault(); toggleRangeTool(); return; }   // 範囲選択モード切替
+    if (e.key === 'Escape') { e.preventDefault(); setTool('select'); return; }              // 選択モードへ戻す
     if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteSelection(); return; } // Backspace: 削除
     if (e.key.toLowerCase() === 's') { e.preventDefault(); splitAtPlayhead(); return; }  // S: 分割
     if (e.key.toLowerCase() === 'a') { e.preventDefault(); cutBefore(); return; }         // A: 前をカット

@@ -80,6 +80,28 @@ export async function runExport() {
     }
   }
 
+  // 非ベース動画トラック（PIP・重ね合成）。下→上の順で各レイヤをまとめる。
+  const videoLayers = [];
+  for (const track of tracksBottomToTop()) {
+    if (track.base || track.kind !== 'video') continue;
+    const clips = [];
+    for (const clip of track.clips) {
+      const m = mediaById(clip.mediaId);
+      if (!m || clipDur(clip) <= 0.02) continue;
+      // PIP の配置・サイズを preview の drawTransformed と同じ式で算出（偶数・画面内クランプ）
+      const mr = (m.width || 16) / (m.height || 9);
+      let bw = W, bh = W / mr; if (bh > H) { bh = H; bw = H * mr; }
+      const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
+      let pw = Math.round(bw * tr.scale), ph = Math.round(bh * tr.scale);
+      pw = Math.min(W, Math.max(2, pw - (pw % 2))); ph = Math.min(H, Math.max(2, ph - (ph % 2)));
+      let x = Math.round(tr.x * W - pw / 2), y = Math.round(tr.y * H - ph / 2);
+      x = Math.max(0, Math.min(W - pw, x)); y = Math.max(0, Math.min(H - ph, y));
+      x -= x % 2; y -= y % 2;
+      clips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y });
+    }
+    if (clips.length) videoLayers.push(clips);
+  }
+
   // 音声トラックのクリップ（BGM・ナレーション等）
   const audioClips = [];
   for (const track of project.tracks) {
@@ -91,13 +113,13 @@ export async function runExport() {
     }
   }
 
-  if (baseClips.length === 0 && overlays.length === 0 && audioClips.length === 0) {
+  if (baseClips.length === 0 && overlays.length === 0 && audioClips.length === 0 && videoLayers.length === 0) {
     hideModal();
     toast('書き出す内容がありません。', 'err');
     return;
   }
 
-  const payload = { output: { width: W, height: H, fps }, duration, baseClips, overlays, audioClips, outputPath: dlg.filePath };
+  const payload = { output: { width: W, height: H, fps }, duration, baseClips, videoLayers, overlays, audioClips, outputPath: dlg.filePath };
 
   if (unsubProgress) unsubProgress();
   unsubProgress = window.api.onExportProgress(({ ratio, message }) => setProgress(ratio, message));

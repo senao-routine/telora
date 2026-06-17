@@ -89,9 +89,13 @@
         <button class="tool-btn" id="btnCutAfter" title="再生位置より後ろをカット"><span class="ico">⟖</span> 後カット <kbd>D</kbd></button>
         <button class="tool-btn" id="btnDelete" title="選択を削除"><span class="ico">🗑</span> 削除 <kbd>⌫</kbd></button>
         <div class="sep"></div>
+        <button class="tool-btn" id="btnRangeTool" title="範囲選択モード（タイムラインをドラッグして区間を選択）"><span class="ico">⇄</span> 範囲選択 <kbd>R</kbd></button>
+        <button class="tool-btn" id="btnDeleteRange" title="選択した区間を削除して詰める（リップル）"><span class="ico">⤬</span> 範囲削除</button>
+        <div class="sep"></div>
         <button class="tool-btn" id="btnAddTelop" title="テロップを追加 (Ctrl/Cmd+T)"><span class="ico">T</span> テロップ追加</button>
         <button class="tool-btn" id="btnSelectAllTelops" title="全テロップを選択して一括編集"><span class="ico">▦</span> 全テロップ選択</button>
         <div class="sep"></div>
+        <button class="tool-btn" id="btnAddVideoLayer" title="動画層を追加（PIP・重ね合成）">＋動画層</button>
         <button class="tool-btn" id="btnAddTextLayer" title="テロップ層を追加">＋テロップ層</button>
         <button class="tool-btn" id="btnAddImageLayer" title="画像(オーバーレイ)層を追加">＋画像層</button>
         <button class="tool-btn" id="btnAddAudioLayer" title="音声層を追加">＋音声層</button>
@@ -109,6 +113,7 @@
           <div class="timeline-content" id="timelineContent">
             <div class="ruler" id="ruler"></div>
             <div class="tracks" id="tracks"></div>
+            <div class="range-band" id="rangeBand" hidden></div>
             <div class="playhead" id="playhead"><div class="playhead-knob"></div><div class="playhead-time" id="playheadTime">0:00</div></div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
   getSelection, setSelection, totalDuration, clipDur, clipEnd, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack,
+  getTool, getRange, setRange,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { seek } from './preview.js';
@@ -14,7 +15,7 @@ const SNAP_PX = 8;
 const TRACK_H = { video: 68, overlay: 52, text: 46, audio: 54 };
 const RULER_H = 26;
 
-let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl;
+let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl, rangeBandEl;
 let drag = null;
 
 export function initTimeline() {
@@ -25,11 +26,14 @@ export function initTimeline() {
   ruler = document.getElementById('ruler');
   playheadEl = document.getElementById('playhead');
   playheadTimeEl = document.getElementById('playheadTime');
+  rangeBandEl = document.getElementById('rangeBand');
 
   on('project', render);
   on('selection', renderSelectionOnly);
   on('zoom', render);
   on('playhead', updatePlayhead);
+  on('range', updateRangeBand);
+  on('tool', updateToolCursor);
 
   ruler.addEventListener('pointerdown', (e) => startScrub(e));
   scrollEl.addEventListener('pointerdown', (e) => {
@@ -68,6 +72,7 @@ function render() {
   renderTracks(P);
   renderHeaders();
   updatePlayhead();
+  updateRangeBand();
   updateZoomLabel();
 }
 
@@ -190,18 +195,39 @@ function snapTime(t, ignoreId) {
   return best;
 }
 
-// ---- スクラブ ----
+// ---- スクラブ / 範囲ドラッグ ----
 function startScrub(e, fromKnob = false) {
   e.preventDefault();
+  if (!fromKnob && getTool() === 'range') { startRangeDrag(e); return; }
   drag = { kind: 'scrub' };
   playheadEl.classList.add('scrubbing');
   if (!fromKnob) setSelection(null);
   seek(fromKnob ? getPlayhead() : timeAtClientX(e.clientX));
 }
 
+function startRangeDrag(e) {
+  e.preventDefault();
+  const t0 = timeAtClientX(e.clientX);
+  drag = { kind: 'range', t0 };
+  setRange({ start: t0, end: t0 });
+}
+
+function updateRangeBand() {
+  if (!rangeBandEl) return;
+  const r = getRange();
+  if (!r || r.end - r.start < 1e-6) { rangeBandEl.hidden = true; return; }
+  rangeBandEl.hidden = false;
+  rangeBandEl.style.left = (r.start * px()) + 'px';
+  rangeBandEl.style.width = ((r.end - r.start) * px()) + 'px';
+}
+function updateToolCursor() {
+  if (scrollEl) scrollEl.classList.toggle('range-mode', getTool() === 'range');
+}
+
 // ---- クリップ操作 ----
 function startClipDrag(e, track, clip) {
   e.stopPropagation();
+  if (getTool() === 'range') { startRangeDrag(e); return; }
   const trim = e.target && e.target.dataset ? e.target.dataset.trim : null;
   setSelection({ trackId: track.id, clipId: clip.id });
   // 履歴は実際に動かした瞬間に積む（単なる選択クリックで undo 履歴を汚さない）
@@ -217,6 +243,11 @@ function onMove(e) {
   if (!drag) return;
   const P = px();
   if (drag.kind === 'scrub') { seek(timeAtClientX(e.clientX)); return; }
+  if (drag.kind === 'range') {
+    const t = timeAtClientX(e.clientX);
+    setRange({ start: Math.min(drag.t0, t), end: Math.max(drag.t0, t) });
+    return;
+  }
 
   const dt = (e.clientX - drag.startX) / P;
   if (Math.abs(e.clientX - drag.startX) < DRAG_THRESHOLD && !drag.moved && drag.kind === 'move') return;
@@ -278,6 +309,7 @@ function onMove(e) {
 function onUp() {
   if (!drag) return;
   playheadEl.classList.remove('scrubbing');
+  if (drag.kind === 'range') { drag = null; return; } // 範囲は保持
   const wasEdit = drag.kind !== 'scrub';
   const trackId = drag.trackId;
   drag = null;

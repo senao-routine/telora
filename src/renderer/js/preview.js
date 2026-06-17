@@ -22,6 +22,7 @@ let hitBoxes = [];
 let dragState = null;
 const imgCache = new Map();
 const audioEls = new Map(); // 音声クリップ id -> HTMLAudioElement
+const trackVideoEls = new Map(); // 非ベース動画トラック id -> HTMLVideoElement
 // <video> がデコードできないコーデック用の FFmpeg フレームフォールバック
 let loadStartPerf = 0;
 const ffFrames = new Map();  // `${mediaId}|${t}` -> HTMLImageElement
@@ -54,6 +55,9 @@ export function initPreview() {
     // 使われなくなった画像も破棄（VRAM リーク防止）
     const mids = new Set(getProject().media.map((m) => m.id));
     for (const id of [...imgCache.keys()]) if (!mids.has(id)) imgCache.delete(id);
+    // 削除された動画トラックの <video> も破棄
+    const vtrackIds = new Set(getProject().tracks.filter((tr) => tr.kind === 'video' && !tr.base).map((tr) => tr.id));
+    for (const [id, el] of trackVideoEls) if (!vtrackIds.has(id)) { try { el.pause(); el.removeAttribute('src'); el.remove(); } catch (_) {} trackVideoEls.delete(id); }
     if (!isPlaying()) { syncBaseVideo(getPlayhead(), false); render(getPlayhead()); }
   });
   on('selection', () => { if (!isPlaying()) render(getPlayhead()); });
@@ -156,6 +160,39 @@ function syncAudioClips(t, shouldPlay) {
 }
 function stopAllAudio() { for (const [, a] of audioEls) { if (!a.paused) a.pause(); } }
 
+// 非ベース動画トラック用の <video> 要素（デコーダ）。表示はキャンバス合成で行う。
+function getTrackVideoEl(trackId) {
+  let el = trackVideoEls.get(trackId);
+  if (!el) {
+    el = document.createElement('video');
+    el.muted = true; el.preload = 'auto'; el.playsInline = true;
+    // DOM に接続しておくと一時停止中のシークでも確実にフレームをデコードする（非表示）
+    el.style.cssText = 'position:absolute;left:-99999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+    (stage || document.body).appendChild(el);
+    trackVideoEls.set(trackId, el);
+  }
+  return el;
+}
+function syncVideoTracks(t, shouldPlay) {
+  const base = baseTrack();
+  for (const track of getProject().tracks) {
+    if (track.kind !== 'video' || track === base) continue;
+    const el = getTrackVideoEl(track.id);
+    const c = clipAtTimeOnTrack(track, t);
+    if (c && c.kind === 'video') {
+      const m = mediaById(c.mediaId);
+      if (m && el._mediaId !== m.id) { el._mediaId = m.id; el._pending = true; el.src = fileUrl(m.path); el.load(); }
+      const desired = clamp(c.in + (t - c.start), 0, m ? m.duration : 1e9);
+      if (el.readyState >= 1) {
+        const tol = shouldPlay ? 0.12 : 0.04;
+        if (el._pending || Math.abs(el.currentTime - desired) > tol) { try { el.currentTime = desired; } catch (_) {} el._pending = false; }
+      } else { el._pending = true; }
+      if (shouldPlay) { if (el.paused) el.play().catch(() => {}); } else if (!el.paused) el.pause();
+    } else if (!el.paused) el.pause();
+  }
+}
+function stopAllTrackVideos() { for (const [, el] of trackVideoEls) { if (!el.paused) el.pause(); } }
+
 // ---- 合成描画（ユーザーに見える唯一のレイヤ）----
 function drawScaled(src, sw, sh) {
   if (!sw || !sh) return;
@@ -164,6 +201,18 @@ function drawScaled(src, sw, sh) {
   let dw = W, dh = W / r;
   if (dh > H) { dh = H; dw = H * r; }
   try { ctx.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh); } catch (_) {}
+}
+
+// transform（中心x,y と scale）付きで描画（オーバーレイ動画・画像 共通）
+function drawTransformed(src, sw, sh, transform) {
+  if (!sw || !sh) return;
+  const W = canvas.width, H = canvas.height;
+  const mr = sw / sh;
+  let bw = W, bh = W / mr;
+  if (bh > H) { bh = H; bw = H * mr; }
+  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
+  const w = bw * tr.scale, h = bh * tr.scale;
+  try { ctx.drawImage(src, tr.x * W - w / 2, tr.y * H - h / 2, w, h); } catch (_) {}
 }
 
 // 戻り値: 'ok' | 'loading' | 'ffloading' | 'fferror' （診断表示用）
@@ -213,13 +262,7 @@ function getFfFrame(media, srcT) {
 function drawMediaClip(clip) {
   const img = imgCache.get(clip.mediaId);
   if (!img || !img.complete || !img.naturalWidth) return;
-  const W = canvas.width, H = canvas.height;
-  const mr = img.naturalWidth / img.naturalHeight;
-  let bw = W, bh = W / mr;
-  if (bh > H) { bh = H; bw = H * mr; }
-  const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
-  const w = bw * tr.scale, h = bh * tr.scale;
-  ctx.drawImage(img, tr.x * W - w / 2, tr.y * H - h / 2, w, h);
+  drawTransformed(img, img.naturalWidth, img.naturalHeight, clip.transform);
 }
 
 function easeOutBack(x) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); }
@@ -286,8 +329,12 @@ export function render(t) {
       const c = clipAtTimeOnTrack(track, t);
       if (c) { if (c.kind === 'video') baseStatus = drawVideoFrame(c, t); else drawMediaClip(c); }
     } else {
-      for (const c of track.clips) {
-        if (c.kind === 'image' && t >= c.start - 1e-6 && t < clipEnd(c) + 1e-6) drawMediaClip(c);
+      // 非ベース：画像はそのまま、動画はトラック専用 <video> のフレームを transform 付きで描画
+      const c = clipAtTimeOnTrack(track, t);
+      if (c && c.kind === 'image') drawMediaClip(c);
+      else if (c && c.kind === 'video') {
+        const el = getTrackVideoEl(track.id);
+        if (el.videoWidth && el.readyState >= 2) drawTransformed(el, el.videoWidth, el.videoHeight, c.transform);
       }
     }
   }
@@ -347,16 +394,18 @@ function tick() {
     const total = totalDuration();
     const t = wallStartT + (performance.now() - wallStartPerf) / 1000;
     if (t >= total) {
-      setPlayhead(total); syncBaseVideo(total, false); syncAudioClips(total, false); render(total); setPlaying(false);
+      setPlayhead(total); syncBaseVideo(total, false); syncVideoTracks(total, false); syncAudioClips(total, false); render(total); setPlaying(false);
       if (video && !video.paused) video.pause();
     } else {
-      setPlayhead(t); syncBaseVideo(t, true); syncAudioClips(t, true); render(t);
+      setPlayhead(t); syncBaseVideo(t, true); syncVideoTracks(t, true); syncAudioClips(t, true); render(t);
     }
   } else {
     // 停止中も毎フレーム再描画（同期は drift>tol のときだけシークするので安定）
-    syncBaseVideo(getPlayhead(), false);
-    syncAudioClips(getPlayhead(), false);
-    render(getPlayhead());
+    const t = getPlayhead();
+    syncBaseVideo(t, false);
+    syncVideoTracks(t, false);
+    syncAudioClips(t, false);
+    render(t);
   }
   rafId = requestAnimationFrame(tick);
 }
@@ -371,7 +420,7 @@ export function play() {
   wallStartT = getPlayhead();
   setPlaying(true);
 }
-export function pause() { if (video && !video.paused) video.pause(); stopAllAudio(); setPlaying(false); }
+export function pause() { if (video && !video.paused) video.pause(); stopAllAudio(); stopAllTrackVideos(); setPlaying(false); }
 export function stop() { pause(); }
 export function togglePlay() { if (isPlaying()) pause(); else play(); }
 

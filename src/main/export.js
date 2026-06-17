@@ -256,8 +256,52 @@ async function exportTimeline(payload, onProgress, registerProc) {
     // 連結
     filterParts.push(`${concatLabels.join('')}concat=n=${segs.length}:v=1:a=1[basev][basea]`);
 
-    // フルフレーム PNG オーバーレイ（テロップ・オーバーレイ画像）。PNG は pts 0 始まりなので framesync 問題なし。
     let prevV = 'basev';
+
+    // 非ベース動画トラック（PIP）：各レイヤを「全尺の透過RGBA連結」にして base へ overlay。
+    // 透明な隙間 + 各クリップを scale して pad で配置（透明背景）。pts 0 始まりなので framesync 問題なし。
+    const videoLayers = payload.videoLayers || [];
+    for (let L = 0; L < videoLayers.length; L++) {
+      const clips = [...videoLayers[L]].sort((a, b) => a.start - b.start);
+      const lsegs = [];
+      let lc = 0;
+      for (const c of clips) {
+        const cs = Math.max(0, c.start);
+        const ce = cs + Math.max(0, c.out - c.in);
+        if (ce <= lc + 1e-3) continue;
+        const vis = Math.max(cs, lc);
+        if (vis > lc + 1e-3) lsegs.push({ gap: true, dur: vis - lc });
+        const effIn = c.in + (vis - cs);
+        lsegs.push({ c, in: effIn, dur: Math.max(0.02, c.out - effIn) });
+        lc = vis + (c.out - effIn);
+      }
+      if (lc < DUR - 1e-3) lsegs.push({ gap: true, dur: DUR - lc });
+      if (lsegs.length === 0) continue;
+
+      const labels = [];
+      for (let i = 0; i < lsegs.length; i++) {
+        const s = lsegs[i]; const dur = Math.max(0.02, s.dur); const lab = `lv${L}_${i}`;
+        if (s.gap) {
+          filterParts.push(`color=c=black@0.0:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[${lab}]`);
+        } else {
+          const c = s.c; const idx = inputIndex++;
+          const PAD = `pad=${W}:${H}:${c.x}:${c.y}:color=black@0.0`;
+          if (c.type === 'image') {
+            inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', c.path);
+            filterParts.push(`[${idx}:v]scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1,${PAD}[${lab}]`);
+          } else {
+            inputArgs.push('-i', c.path);
+            filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1,${PAD}[${lab}]`);
+          }
+        }
+        labels.push(`[${lab}]`);
+      }
+      filterParts.push(`${labels.join('')}concat=n=${lsegs.length}:v=1[vlayer${L}]`);
+      filterParts.push(`[${prevV}][vlayer${L}]overlay=0:0[vlc${L}]`);
+      prevV = `vlc${L}`;
+    }
+
+    // フルフレーム PNG オーバーレイ（テロップ・オーバーレイ画像）。PNG は pts 0 始まりなので framesync 問題なし。
     for (let j = 0; j < overlays.length; j++) {
       const ov = overlays[j];
       const pngPath = path.join(tmpDir, `ov_${j}.png`);

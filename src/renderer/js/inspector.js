@@ -5,7 +5,7 @@ import {
   pushHistory, noteDirty, totalDuration, clipMaxOut, MIN_CLIP,
   TELOP_PRESETS, TELOP_ANIMS, applyTelopPreset, getTextClips, setSelection,
 } from './state.js';
-import { splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter } from './edit.js';
+import { splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, duplicateSelection } from './edit.js';
 
 let body, titleEl;
 let fieldRefs = {};
@@ -81,8 +81,8 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('ボリューム', 0, 2, 0.05, clip.volume, (v) => { clip.volume = v; live(clip); }, pct, 'volume'));
   }
 
-  // 変形（画像のみ：位置・サイズ）
-  if (clip.kind === 'image') {
+  // 変形（画像、またはベース以外の動画＝PIP）：位置・サイズ
+  if (clip.kind === 'image' || (clip.kind === 'video' && !track.base)) {
     if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 };
     body.appendChild(el('div', { class: 'inspector-section-title', text: '位置・サイズ' }));
     body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, clip.transform.x, (v) => { clip.transform.x = v; live(clip); }, pct, 'tx'));
@@ -93,6 +93,7 @@ function renderMediaInspector(clip, track) {
   // 操作
   body.appendChild(el('div', { class: 'inspector-section-title', text: '操作' }));
   body.appendChild(el('div', { class: 'btn-col' }, [
+    el('button', { class: 'btn full-btn', onClick: () => duplicateSelection() }, ['⧉ 複製（Cmd/Ctrl+D）']),
     el('button', { class: 'btn full-btn', onClick: () => splitAtPlayhead() }, ['✂ 再生位置で分割']),
     el('button', { class: 'btn full-btn', onClick: () => cutBefore() }, ['⟕ 再生位置より前をカット']),
     el('button', { class: 'btn full-btn', onClick: () => cutAfter() }, ['⟖ 再生位置より後ろをカット']),
@@ -204,7 +205,8 @@ function renderTextInspector(tp) {
   fieldRefs.tstart = startIn; fieldRefs.tend = endIn;
   body.appendChild(el('div', { class: 'row' }, [field('開始 (秒)', startIn), field('終了 (秒)', endIn)]));
 
-  body.appendChild(el('button', { class: 'danger-btn', style: 'margin-top:14px', onClick: () => deleteSelection() }, ['このテロップを削除']));
+  body.appendChild(el('button', { class: 'btn full-btn', style: 'margin-top:14px', onClick: () => duplicateSelection() }, ['⧉ 複製（Cmd/Ctrl+D）']));
+  body.appendChild(el('button', { class: 'danger-btn', style: 'margin-top:8px', onClick: () => deleteSelection() }, ['このテロップを削除']));
 }
 
 // ---- 全テロップ一括編集 ----
