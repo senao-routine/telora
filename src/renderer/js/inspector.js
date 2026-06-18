@@ -1,7 +1,7 @@
 // インスペクタ（プロパティ）パネル — クリップ種別ごとに編集 UI を出し分け
 import { el, fmtTime, clamp } from './util.js';
 import {
-  getProject, on, emit, getSelection, mediaById, clipDur, clipEnd, findClip,
+  getProject, on, emit, getSelection, mediaById, clipDur, clipEnd, findClip, clipSpeed,
   pushHistory, noteDirty, totalDuration, clipMaxOut, MIN_CLIP,
   TELOP_PRESETS, TELOP_ANIMS, applyTelopPreset, getTextClips, setSelection,
 } from './state.js';
@@ -67,12 +67,20 @@ function renderMediaInspector(clip, track) {
   body.appendChild(el('div', { class: 'inspector-section-title', text: '配置・長さ' }));
   const startIn = numberInput(clip.start, (v) => { clip.start = Math.max(0, v); live(clip); emit('project'); });
   const durIn = numberInput(clipDur(clip), (v) => {
-    const maxDur = clipMaxOut(clip) - clip.in;
+    const sp = clipSpeed(clip);
+    const maxDur = (clipMaxOut(clip) - clip.in) / sp;
     const d = clamp(v, MIN_CLIP, maxDur);
-    clip.out = clip.in + d; live(clip); emit('project');
+    clip.out = clip.in + d * sp; live(clip); emit('project');
   });
   fieldRefs.start = startIn; fieldRefs.dur = durIn;
   body.appendChild(el('div', { class: 'row' }, [field('開始 (秒)', startIn), field('長さ (秒)', durIn)]));
+
+  // 速度（動画・音声）
+  if (clip.kind === 'video' || clip.kind === 'audio') {
+    if (clip.speed == null) clip.speed = 1;
+    body.appendChild(el('div', { class: 'inspector-section-title', text: '速度' }));
+    body.appendChild(rangeField('再生速度', 0.25, 4, 0.05, clip.speed, (v) => { clip.speed = Math.max(0.1, v); live(clip); emit('project'); }, (v) => v.toFixed(2) + '×', 'speed'));
+  }
 
   // 音量（音声のみ）
   if (clip.kind === 'audio') {
@@ -316,6 +324,7 @@ function syncFields() {
   if (c.kind === 'text' && fieldRefs.topacity) setRange(fieldRefs.topacity, c.opacity != null ? c.opacity : 1, pct);
   if (fieldRefs.fadeIn) setRange(fieldRefs.fadeIn, c.fadeIn || 0, (v) => v.toFixed(1) + 's');
   if (fieldRefs.fadeOut) setRange(fieldRefs.fadeOut, c.fadeOut || 0, (v) => v.toFixed(1) + 's');
+  if (fieldRefs.speed) setRange(fieldRefs.speed, c.speed || 1, (v) => v.toFixed(2) + '×');
   if (fieldRefs.volume && isFinite(c.volume)) setRange(fieldRefs.volume, c.volume, pct);
   if (fieldRefs.start && document.activeElement !== fieldRefs.start) fieldRefs.start.value = (+c.start).toFixed(1);
   if (fieldRefs.dur && document.activeElement !== fieldRefs.dur) fieldRefs.dur.value = clipDur(c).toFixed(1);

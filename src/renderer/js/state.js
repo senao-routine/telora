@@ -202,9 +202,11 @@ export function baseTrack() {
 }
 export function tracksBottomToTop() { return [...state.project.tracks].reverse(); }
 
+// クリップ速度（1=等速, 2=2倍速, 0.5=スロー）。映像・音声に適用。
+export function clipSpeed(c) { return (c && c.speed && c.speed > 0) ? c.speed : 1; }
 export function clipDur(c) {
   if (c.kind === 'text') return Math.max(0, c.end - c.start);
-  return Math.max(0, c.out - c.in);
+  return Math.max(0, c.out - c.in) / clipSpeed(c); // タイムライン尺＝素材尺/速度
 }
 export function clipEnd(c) { return c.start + clipDur(c); }
 
@@ -248,7 +250,7 @@ export function baseClipAtTime(t) {
   if (!tr) return null;
   const clip = clipAtTimeOnTrack(tr, t);
   if (!clip) return null;
-  return { track: tr, clip, sourceTime: clip.in + (t - clip.start) };
+  return { track: tr, clip, sourceTime: clip.in + (t - clip.start) * clipSpeed(clip) };
 }
 
 // タイムライン総尺（全トラック・全クリップの最大終端）

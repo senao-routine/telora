@@ -2,7 +2,7 @@
 import { el, clamp, fmtRuler, fmtTime, basename, uid } from './util.js';
 import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
-  getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, totalDuration, clipDur, clipEnd, getTrack,
+  getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack,
   getTool, getRange, setRange, getMarkers,
 } from './state.js';
@@ -324,19 +324,19 @@ function onMove(e) {
       if (drag.side === 'left') clip.start = clamp(snapTime(drag.origStart + dt, clip.id), 0, drag.origEnd - MIN_TEXT);
       else clip.end = Math.max(clip.start + MIN_TEXT, snapTime(drag.origEnd + dt, clip.id));
     } else {
+      // 速度を考慮：タイムライン上の移動 dt は素材上では dt*sp 進む
+      const sp = clipSpeed(clip);
       if (drag.side === 'left') {
-        let ni = clamp(drag.origIn + dt, 0, drag.origOut - MIN_CLIP);
-        let ns = drag.origStart + (ni - drag.origIn);
-        // 左端スナップ
+        let ni = clamp(drag.origIn + dt * sp, 0, drag.origOut - MIN_CLIP * sp);
+        let ns = drag.origStart + (ni - drag.origIn) / sp;
         const snapped = snapTime(ns, clip.id);
-        if (snapped !== ns) { ni = clamp(drag.origIn + (snapped - drag.origStart), 0, drag.origOut - MIN_CLIP); ns = drag.origStart + (ni - drag.origIn); }
+        if (snapped !== ns) { ni = clamp(drag.origIn + (snapped - drag.origStart) * sp, 0, drag.origOut - MIN_CLIP * sp); ns = drag.origStart + (ni - drag.origIn) / sp; }
         clip.in = ni; clip.start = ns;
       } else {
         const maxOut = clipMaxOut(clip);
-        let no = clamp(drag.origOut + dt, drag.origIn + MIN_CLIP, maxOut);
-        // 右トリム中は start/in は不変なので原点(orig)基準で算出（左トリムと一貫）
-        const rightEdge = snapTime(drag.origStart + (no - drag.origIn), clip.id);
-        no = clamp(drag.origIn + (rightEdge - drag.origStart), drag.origIn + MIN_CLIP, maxOut);
+        let no = clamp(drag.origOut + dt * sp, drag.origIn + MIN_CLIP * sp, maxOut);
+        const rightEdge = snapTime(drag.origStart + (no - drag.origIn) / sp, clip.id);
+        no = clamp(drag.origIn + (rightEdge - drag.origStart) * sp, drag.origIn + MIN_CLIP * sp, maxOut);
         clip.out = no;
       }
     }

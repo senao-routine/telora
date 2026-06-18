@@ -186,14 +186,15 @@ async function exportTimeline(payload, onProgress, registerProc) {
   const H = Math.max(2, Math.round(output.height));
   const FPS = output.fps && output.fps > 0 ? output.fps : 30;
 
-  // 総尺：payload 優先、無ければクリップ終端から算出
+  // 総尺：payload 優先、無ければクリップ終端から算出（速度で尺は素材/速度）
+  const tdur = (c) => Math.max(0, c.out - c.in) / ((c.speed && c.speed > 0) ? c.speed : 1);
   let DUR = payload.duration || 0;
-  for (const c of baseClips) DUR = Math.max(DUR, c.start + Math.max(0, c.out - c.in));
+  for (const c of baseClips) DUR = Math.max(DUR, c.start + tdur(c));
   for (const o of overlays) DUR = Math.max(DUR, o.end);
-  for (const ac of audioClips) DUR = Math.max(DUR, ac.start + Math.max(0, ac.out - ac.in));
+  for (const ac of audioClips) DUR = Math.max(DUR, ac.start + tdur(ac));
   if (hasLayers) for (const l of layers) {
     if (l.kind === 'png') DUR = Math.max(DUR, l.end);
-    else for (const c of (l.clips || [])) DUR = Math.max(DUR, c.start + Math.max(0, c.out - c.in));
+    else for (const c of (l.clips || [])) DUR = Math.max(DUR, c.start + tdur(c));
   }
   DUR = Math.max(0.1, DUR);
 
@@ -208,6 +209,16 @@ async function exportTimeline(payload, onProgress, registerProc) {
     const SCALE_PAD = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
     const AFMT = 'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo';
     const SILENCE = (d) => `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${d.toFixed(3)},asetpts=PTS-STARTPTS,${AFMT}`;
+    // 速度変更：映像は setpts、音声は atempo（範囲外は連鎖）
+    const videoSetpts = (sp) => (sp && Math.abs(sp - 1) > 1e-3) ? `setpts=(PTS-STARTPTS)/${sp.toFixed(4)}` : 'setpts=PTS-STARTPTS';
+    const atempoChain = (sp) => {
+      if (!sp || Math.abs(sp - 1) < 1e-3) return '';
+      let r = sp; const parts = [];
+      while (r > 2.0 + 1e-6) { parts.push('atempo=2.0'); r /= 2; }
+      while (r < 0.5 - 1e-6) { parts.push('atempo=0.5'); r /= 0.5; }
+      parts.push(`atempo=${r.toFixed(4)}`);
+      return ',' + parts.join(',');
+    };
     // クロップ（各辺 0..1）を scale 前に適用するフィルタ接頭辞（末尾カンマ込み。無ければ空）
     const cropPrefix = (crop) => {
       if (!crop) return '';
@@ -223,14 +234,16 @@ async function exportTimeline(payload, onProgress, registerProc) {
     const segs = [];
     let cursor = 0;
     for (const c of sorted) {
+      const sp = (c.speed && c.speed > 0) ? c.speed : 1; // 速度（タイムライン尺＝素材/速度）
       const cstart = Math.max(0, c.start);
-      const cend = cstart + Math.max(0, c.out - c.in);
+      const cend = cstart + Math.max(0, c.out - c.in) / sp;
       if (cend <= cursor + 1e-3) continue;          // 先行クリップに完全に隠れる
       const visStart = Math.max(cstart, cursor);
       if (visStart > cursor + 1e-3) segs.push({ type: 'black', dur: visStart - cursor });
-      const effIn = c.in + (visStart - cstart);     // 重なりで隠れる先頭分をスキップ
-      segs.push({ type: c.type, clip: c, in: effIn, dur: Math.max(0.02, c.out - effIn) });
-      cursor = visStart + (c.out - effIn);
+      const effIn = c.in + (visStart - cstart) * sp; // 重なりで隠れる先頭分をスキップ（素材時間）
+      const segDur = Math.max(0.02, (c.out - effIn) / sp);
+      segs.push({ type: c.type, clip: c, in: effIn, dur: segDur });
+      cursor = visStart + segDur;
     }
     if (cursor < DUR - 1e-3) segs.push({ type: 'black', dur: DUR - cursor });
     if (segs.length === 0) segs.push({ type: 'black', dur: DUR });
@@ -251,6 +264,7 @@ async function exportTimeline(payload, onProgress, registerProc) {
       const brot = (seg.clip && seg.clip.rotation) || 0;
       const baaF = bop < 1 ? `,colorchannelmixer=aa=${bop.toFixed(3)}` : '';
       const bcropF = cropPrefix(seg.clip && seg.clip.crop);
+      const bsp = (seg.clip && seg.clip.speed) || 1; // 速度
       // フェードイン/アウト（ベース映像は黒へフェード、音声は afade）
       const fi = (seg.clip && seg.clip.fadeIn) || 0, fo = (seg.clip && seg.clip.fadeOut) || 0;
       let vfade = '';
@@ -286,15 +300,15 @@ async function exportTimeline(payload, onProgress, registerProc) {
         const idx = inputIndex++;
         inputArgs.push('-i', c.path);
         if (brot) {
-          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${baaF}[scB${i}]`);
+          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(bsp)},${bcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${baaF}[scB${i}]`);
           buildRotatedBase(`scB${i}`);
         } else {
-          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}${place}${opF},${VFMT}${vfade}[v${i}]`);
+          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(bsp)},${bcropF}${place}${opF},${VFMT}${vfade}[v${i}]`);
         }
         // eslint-disable-next-line no-await-in-loop
         if (await sourceHasAudio(c.path)) {
           // 音声が映像より短い素材でも concat が破綻しないよう、セグメント尺まで無音パディング
-          filterParts.push(`[${idx}:a]atrim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},asetpts=PTS-STARTPTS,apad=whole_dur=${dur.toFixed(3)},${AFMT}${afadeF}[a${i}]`);
+          filterParts.push(`[${idx}:a]atrim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},asetpts=PTS-STARTPTS${atempoChain(bsp)},apad=whole_dur=${dur.toFixed(3)},${AFMT}${afadeF}[a${i}]`);
         } else {
           filterParts.push(`${SILENCE(dur)}[a${i}]`);
         }
@@ -326,14 +340,16 @@ async function exportTimeline(payload, onProgress, registerProc) {
         const lsegs = [];
         let lc = 0;
         for (const c of clips) {
+          const sp = (c.speed && c.speed > 0) ? c.speed : 1;
           const cs = Math.max(0, c.start);
-          const ce = cs + Math.max(0, c.out - c.in);
+          const ce = cs + Math.max(0, c.out - c.in) / sp;
           if (ce <= lc + 1e-3) continue;
           const vis = Math.max(cs, lc);
           if (vis > lc + 1e-3) lsegs.push({ gap: true, dur: vis - lc });
-          const effIn = c.in + (vis - cs);
-          lsegs.push({ c, in: effIn, dur: Math.max(0.02, c.out - effIn) });
-          lc = vis + (c.out - effIn);
+          const effIn = c.in + (vis - cs) * sp;
+          const segDur = Math.max(0.02, (c.out - effIn) / sp);
+          lsegs.push({ c, in: effIn, dur: segDur });
+          lc = vis + segDur;
         }
         if (lc < DUR - 1e-3) lsegs.push({ gap: true, dur: DUR - lc });
         if (lsegs.length === 0) continue;
@@ -364,7 +380,7 @@ async function exportTimeline(payload, onProgress, registerProc) {
               filterParts.push(`[${idx}:v]${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
             } else {
               inputArgs.push('-i', c.path);
-              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
+              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(c.speed || 1)},${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
             }
             if (rot) {
               // クリップ中心(cx,cy)まわりに回転し、透明な全画面へ overlay（中心を保ったまま配置）
@@ -428,7 +444,7 @@ async function exportTimeline(payload, onProgress, registerProc) {
         if (afo > 0) af += `,afade=t=out:st=${Math.max(0, adur - afo).toFixed(3)}:d=${afo.toFixed(3)}`;
         const idx = inputIndex++;
         inputArgs.push('-i', ac.path);
-        filterParts.push(`[${idx}:a]atrim=start=${ac.in.toFixed(3)}:end=${ac.out.toFixed(3)},asetpts=PTS-STARTPTS,volume=${vol.toFixed(3)}${af},adelay=${ms}|${ms},${AFMT}[aclip${k}]`);
+        filterParts.push(`[${idx}:a]atrim=start=${ac.in.toFixed(3)}:end=${ac.out.toFixed(3)},asetpts=PTS-STARTPTS${atempoChain(ac.speed || 1)},volume=${vol.toFixed(3)}${af},adelay=${ms}|${ms},${AFMT}[aclip${k}]`);
         aLabels.push(`aclip${k}`);
       }
       filterParts.push(`${aLabels.map((l) => `[${l}]`).join('')}amix=inputs=${aLabels.length}:normalize=0:duration=longest[amixed]`);

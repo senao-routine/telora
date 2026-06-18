@@ -2,7 +2,7 @@
 import {
   getProject, mutate, getPlayhead, getSelection, setSelection, findClip,
   clipDur, clipEnd, baseClipAtTime, defaultTextClip, getTracks, totalDuration,
-  slotFree, MIN_CLIP, getSelectedIds, getSelectedClips, setMultiSelection,
+  slotFree, MIN_CLIP, getSelectedIds, getSelectedClips, setMultiSelection, clipSpeed,
 } from './state.js';
 import { uid } from './util.js';
 import { findFreeSlot } from './media.js';
@@ -41,9 +41,9 @@ export function splitAtPlayhead() {
       second = Object.assign({}, c, { id: uid('text'), start: t, end: c.end });
       c.end = t;
     } else {
-      const srcSplit = c.in + local;
-      second = { id: uid('clip'), kind: c.kind, mediaId: c.mediaId, in: srcSplit, out: c.out, start: t, transform: Object.assign({}, c.transform) };
-      c.out = srcSplit;
+      const srcSplit = c.in + local * clipSpeed(c); // 速度を考慮して素材分割点を算出
+      second = { id: uid('clip'), kind: c.kind, mediaId: c.mediaId, in: srcSplit, out: c.out, start: t, speed: c.speed, volume: c.volume, fadeIn: 0, fadeOut: c.fadeOut, transform: c.transform ? Object.assign({}, c.transform) : undefined };
+      c.out = srcSplit; c.fadeOut = 0;
     }
     tr.clips.splice(idx + 1, 0, second);
     newId = second.id;
@@ -64,7 +64,7 @@ export function cutBefore() {
   mutate(() => {
     const c = findClip(clip.id).clip;
     if (c.kind === 'text') { c.start = t; }
-    else { c.in = c.in + (t - c.start); c.start = t; }
+    else { c.in = c.in + (t - c.start) * clipSpeed(c); c.start = t; }
   });
   toast('再生位置より前をカットしました');
 }
@@ -80,7 +80,7 @@ export function cutAfter() {
   mutate(() => {
     const c = findClip(clip.id).clip;
     if (c.kind === 'text') { c.end = t; }
-    else { c.out = c.in + (t - c.start); }
+    else { c.out = c.in + (t - c.start) * clipSpeed(c); }
   });
   toast('再生位置より後ろをカットしました');
 }
@@ -204,8 +204,9 @@ function makeSub(c, t0, t1, newStart) {
   const ns = newStart != null ? newStart : t0;
   const dur = Math.max(0, t1 - t0);
   if (c.kind === 'text') return Object.assign({}, c, { id: uid('text'), start: ns, end: ns + dur });
-  const srcIn = c.in + (t0 - c.start);
-  return Object.assign({}, c, { id: uid('clip'), in: srcIn, out: srcIn + dur, start: ns, transform: c.transform ? Object.assign({}, c.transform) : undefined });
+  const sp = clipSpeed(c);
+  const srcIn = c.in + (t0 - c.start) * sp;
+  return Object.assign({}, c, { id: uid('clip'), in: srcIn, out: srcIn + dur * sp, start: ns, transform: c.transform ? Object.assign({}, c.transform) : undefined });
 }
 export function deleteSelectedRange() {
   const r = getRange();

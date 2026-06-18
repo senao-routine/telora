@@ -4,7 +4,7 @@
 import { fileUrl, clamp, fmtTime } from './util.js';
 import {
   getProject, on, emit, mediaById, totalDuration, baseTrack, clipAtTimeOnTrack,
-  baseClipAtTime, clipEnd, clipDur, tracksBottomToTop, clipFadeAlpha,
+  baseClipAtTime, clipEnd, clipDur, tracksBottomToTop, clipFadeAlpha, clipSpeed,
   setPlayhead, getPlayhead, setPlaying, isPlaying, getSelection, setSelection,
   pushHistory, noteDirty,
 } from './state.js';
@@ -122,7 +122,9 @@ function syncBaseVideo(t, shouldPlay) {
   if (base && base.clip.kind === 'video') {
     const m = mediaById(base.clip.mediaId);
     if (m && loadedMediaId !== m.id) { loadedMediaId = m.id; pendingSeek = true; loadStartPerf = performance.now(); ffLastImg = null; video.src = fileUrl(m.path); video.load(); }
-    const desired = clamp(base.clip.in + (t - base.clip.start), 0, m ? m.duration : 1e9);
+    const sp = clipSpeed(base.clip);
+    const desired = clamp(base.clip.in + (t - base.clip.start) * sp, 0, m ? m.duration : 1e9);
+    try { video.playbackRate = sp; } catch (_) {}
     if (video.readyState >= 1) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
@@ -152,7 +154,8 @@ function syncAudioClips(t, shouldPlay) {
       let a = audioEls.get(c.id);
       if (!a) { a = new Audio(); a.src = fileUrl(m.path); a.preload = 'auto'; audioEls.set(c.id, a); }
       a.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
-      const desired = clamp(c.in + (t - c.start), 0, m.duration || 1e9);
+      const sp = clipSpeed(c); try { a.playbackRate = sp; } catch (_) {}
+      const desired = clamp(c.in + (t - c.start) * sp, 0, m.duration || 1e9);
       if (a.readyState >= 1 && Math.abs(a.currentTime - desired) > 0.15) { try { a.currentTime = desired; } catch (_) {} }
       if (a.paused) a.play().catch(() => {});
       activeIds.add(c.id);
@@ -186,7 +189,8 @@ function syncVideoTracks(t, shouldPlay) {
       const m = mediaById(c.mediaId);
       if (m && el._mediaId !== m.id) { el._mediaId = m.id; el._pending = true; el.src = fileUrl(m.path); el.load(); }
       el.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
-      const desired = clamp(c.in + (t - c.start), 0, m ? m.duration : 1e9);
+      const sp = clipSpeed(c); try { el.playbackRate = sp; } catch (_) {}
+      const desired = clamp(c.in + (t - c.start) * sp, 0, m ? m.duration : 1e9);
       if (el.readyState >= 1) {
         const tol = shouldPlay ? 0.12 : 0.04;
         if (el._pending || Math.abs(el.currentTime - desired) > tol) { try { el.currentTime = desired; } catch (_) {} el._pending = false; }
@@ -269,7 +273,7 @@ function drawVideoFrame(clip, t) {
   const elapsed = performance.now() - loadStartPerf;
   const failed = (video.error != null) || (elapsed > 800);
   if (!failed) return elapsed > 300 ? 'loading' : null; // 読み込み中（短時間ならメッセージ抑制）
-  const srcT = clip.in + (t - clip.start);
+  const srcT = clip.in + (t - clip.start) * clipSpeed(clip);
   const img = getFfFrame(m, srcT);
   if (img) { drawTransformed(img, img.naturalWidth, img.naturalHeight, tr); ffLastImg = img; return 'ok'; }
   if (ffLastImg && ffLastImg.naturalWidth) { drawTransformed(ffLastImg, ffLastImg.naturalWidth, ffLastImg.naturalHeight, tr); return 'ok'; }
