@@ -102,6 +102,9 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('下', 0, 0.45, 0.01, tr.crop.b, (v) => { tr.crop.b = v; live(clip); }, pct, 'crB'));
   }
 
+  // フェード（映像・音声共通）
+  appendFadeFields(clip);
+
   // 操作
   body.appendChild(el('div', { class: 'inspector-section-title', text: '操作' }));
   body.appendChild(el('div', { class: 'btn-col' }, [
@@ -111,6 +114,16 @@ function renderMediaInspector(clip, track) {
     el('button', { class: 'btn full-btn', onClick: () => cutAfter() }, ['⟖ 再生位置より後ろをカット']),
   ]));
   body.appendChild(el('button', { class: 'danger-btn', style: 'margin-top:8px', onClick: () => deleteSelection() }, ['このクリップを削除']));
+}
+
+// フェードイン/アウト（秒）スライダー。映像・音声・テロップ共通。
+function appendFadeFields(clip) {
+  if (clip.fadeIn == null) clip.fadeIn = 0;
+  if (clip.fadeOut == null) clip.fadeOut = 0;
+  const fmax = Math.max(0.5, Math.min(5, clipDur(clip)));
+  body.appendChild(el('div', { class: 'inspector-section-title', text: 'フェード（秒）' }));
+  body.appendChild(rangeField('フェードイン', 0, fmax, 0.1, clip.fadeIn, (v) => { clip.fadeIn = v; live(clip); }, (v) => v.toFixed(1) + 's', 'fadeIn'));
+  body.appendChild(rangeField('フェードアウト', 0, fmax, 0.1, clip.fadeOut, (v) => { clip.fadeOut = v; live(clip); }, (v) => v.toFixed(1) + 's', 'fadeOut'));
 }
 
 function infoRow(k, v) { return el('div', { class: 'clip-info-row' }, [el('span', { text: k }), el('span', { text: v })]); }
@@ -219,6 +232,8 @@ function renderTextInspector(tp) {
   fieldRefs.tstart = startIn; fieldRefs.tend = endIn;
   body.appendChild(el('div', { class: 'row' }, [field('開始 (秒)', startIn), field('終了 (秒)', endIn)]));
 
+  appendFadeFields(tp); // フェードイン/アウト
+
   body.appendChild(el('button', { class: 'btn full-btn', style: 'margin-top:14px', onClick: () => duplicateSelection() }, ['⧉ 複製（Cmd/Ctrl+D）']));
   body.appendChild(el('button', { class: 'danger-btn', style: 'margin-top:8px', onClick: () => deleteSelection() }, ['このテロップを削除']));
 }
@@ -299,6 +314,8 @@ function syncFields() {
     }
   }
   if (c.kind === 'text' && fieldRefs.topacity) setRange(fieldRefs.topacity, c.opacity != null ? c.opacity : 1, pct);
+  if (fieldRefs.fadeIn) setRange(fieldRefs.fadeIn, c.fadeIn || 0, (v) => v.toFixed(1) + 's');
+  if (fieldRefs.fadeOut) setRange(fieldRefs.fadeOut, c.fadeOut || 0, (v) => v.toFixed(1) + 's');
   if (fieldRefs.volume && isFinite(c.volume)) setRange(fieldRefs.volume, c.volume, pct);
   if (fieldRefs.start && document.activeElement !== fieldRefs.start) fieldRefs.start.value = (+c.start).toFixed(1);
   if (fieldRefs.dur && document.activeElement !== fieldRefs.dur) fieldRefs.dur.value = clipDur(c).toFixed(1);

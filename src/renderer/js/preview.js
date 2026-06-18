@@ -4,7 +4,7 @@
 import { fileUrl, clamp, fmtTime } from './util.js';
 import {
   getProject, on, emit, mediaById, totalDuration, baseTrack, clipAtTimeOnTrack,
-  baseClipAtTime, clipEnd, clipDur, tracksBottomToTop,
+  baseClipAtTime, clipEnd, clipDur, tracksBottomToTop, clipFadeAlpha,
   setPlayhead, getPlayhead, setPlaying, isPlaying, getSelection, setSelection,
   pushHistory, noteDirty,
 } from './state.js';
@@ -126,6 +126,7 @@ function syncBaseVideo(t, shouldPlay) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
     } else { pendingSeek = true; }
+    try { video.volume = clipFadeAlpha(base.clip, t); } catch (_) {} // ベース動画音声のフェード
     if (shouldPlay) { if (video.paused) safePlay(); } else if (!video.paused) video.pause();
   } else {
     if (!video.paused) video.pause();
@@ -149,7 +150,7 @@ function syncAudioClips(t, shouldPlay) {
       if (!m) continue;
       let a = audioEls.get(c.id);
       if (!a) { a = new Audio(); a.src = fileUrl(m.path); a.preload = 'auto'; audioEls.set(c.id, a); }
-      a.volume = clamp(c.volume != null ? c.volume : 1, 0, 1);
+      a.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
       const desired = clamp(c.in + (t - c.start), 0, m.duration || 1e9);
       if (a.readyState >= 1 && Math.abs(a.currentTime - desired) > 0.15) { try { a.currentTime = desired; } catch (_) {} }
       if (a.paused) a.play().catch(() => {});
@@ -183,7 +184,7 @@ function syncVideoTracks(t, shouldPlay) {
     if (c && c.kind === 'video') {
       const m = mediaById(c.mediaId);
       if (m && el._mediaId !== m.id) { el._mediaId = m.id; el._pending = true; el.src = fileUrl(m.path); el.load(); }
-      el.volume = clamp(c.volume != null ? c.volume : 1, 0, 1);
+      el.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
       const desired = clamp(c.in + (t - c.start), 0, m ? m.duration : 1e9);
       if (el.readyState >= 1) {
         const tol = shouldPlay ? 0.12 : 0.04;
@@ -362,6 +363,9 @@ export function render(t) {
     const isBase = !!track.base;
     for (const c of track.clips) {
       if (t < c.start - 1e-6 || t >= clipEnd(c) + 1e-6) continue;
+      const fa = clipFadeAlpha(c, t); // フェードイン/アウトのアルファ
+      if (fa <= 0.001) continue;
+      ctx.globalAlpha = fa;
       if (c.kind === 'text') {
         // 当たり判定用は素の bbox を別途取得（アニメ変形前）
         const bbox = drawTextClipAnimated(c, t) || measureTelop(c);
@@ -385,6 +389,7 @@ export function render(t) {
           hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(el.videoWidth, el.videoHeight, c.transform), kind: 'video', isBase: false });
         }
       }
+      ctx.globalAlpha = 1;
     }
   }
 

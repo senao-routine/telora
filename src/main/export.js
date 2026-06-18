@@ -251,13 +251,21 @@ async function exportTimeline(payload, onProgress, registerProc) {
       const brot = (seg.clip && seg.clip.rotation) || 0;
       const baaF = bop < 1 ? `,colorchannelmixer=aa=${bop.toFixed(3)}` : '';
       const bcropF = cropPrefix(seg.clip && seg.clip.crop);
+      // フェードイン/アウト（ベース映像は黒へフェード、音声は afade）
+      const fi = (seg.clip && seg.clip.fadeIn) || 0, fo = (seg.clip && seg.clip.fadeOut) || 0;
+      let vfade = '';
+      if (fi > 0) vfade += `,fade=t=in:st=0:d=${fi.toFixed(3)}`;
+      if (fo > 0) vfade += `,fade=t=out:st=${Math.max(0, dur - fo).toFixed(3)}:d=${fo.toFixed(3)}`;
+      let afadeF = '';
+      if (fi > 0) afadeF += `,afade=t=in:st=0:d=${fi.toFixed(3)}`;
+      if (fo > 0) afadeF += `,afade=t=out:st=${Math.max(0, dur - fo).toFixed(3)}:d=${fo.toFixed(3)}`;
       // 回転ありのベースクリップを「黒背景へクリップ中心まわりに回転 overlay」で [v${i}] にする
       const buildRotatedBase = (preLabel) => {
         const rad = (brot * Math.PI / 180).toFixed(5);
         const c = seg.clip; const cx = c.x + c.pw / 2, cy = c.y + c.ph / 2;
         filterParts.push(`[${preLabel}]rotate=${rad}:c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)[roB${i}]`);
         filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[bkB${i}]`);
-        filterParts.push(`[bkB${i}][roB${i}]overlay=x=${cx}-overlay_w/2:y=${cy}-overlay_h/2,${VFMT}[v${i}]`);
+        filterParts.push(`[bkB${i}][roB${i}]overlay=x=${cx}-overlay_w/2:y=${cy}-overlay_h/2,${VFMT}${vfade}[v${i}]`);
       };
       if (seg.type === 'black') {
         filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},${VFMT}[v${i}]`);
@@ -269,7 +277,7 @@ async function exportTimeline(payload, onProgress, registerProc) {
           filterParts.push(`[${idx}:v]${bcropF}scale=${seg.clip.pw}:${seg.clip.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${baaF}[scB${i}]`);
           buildRotatedBase(`scB${i}`);
         } else {
-          filterParts.push(`[${idx}:v]${bcropF}${place}${opF},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}[v${i}]`);
+          filterParts.push(`[${idx}:v]${bcropF}${place}${opF},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}${vfade}[v${i}]`);
         }
         filterParts.push(`${SILENCE(dur)}[a${i}]`);
       } else {
@@ -281,12 +289,12 @@ async function exportTimeline(payload, onProgress, registerProc) {
           filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${baaF}[scB${i}]`);
           buildRotatedBase(`scB${i}`);
         } else {
-          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}${place}${opF},${VFMT}[v${i}]`);
+          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}${place}${opF},${VFMT}${vfade}[v${i}]`);
         }
         // eslint-disable-next-line no-await-in-loop
         if (await sourceHasAudio(c.path)) {
           // 音声が映像より短い素材でも concat が破綻しないよう、セグメント尺まで無音パディング
-          filterParts.push(`[${idx}:a]atrim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},asetpts=PTS-STARTPTS,apad=whole_dur=${dur.toFixed(3)},${AFMT}[a${i}]`);
+          filterParts.push(`[${idx}:a]atrim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},asetpts=PTS-STARTPTS,apad=whole_dur=${dur.toFixed(3)},${AFMT}${afadeF}[a${i}]`);
         } else {
           filterParts.push(`${SILENCE(dur)}[a${i}]`);
         }
@@ -344,14 +352,19 @@ async function exportTimeline(payload, onProgress, registerProc) {
             const aaF = lop < 1 ? `,colorchannelmixer=aa=${lop.toFixed(3)}` : '';
             const rot = c.rotation || 0;
             const lcropF = cropPrefix(c.crop);
+            // フェードイン/アウト（透過レイヤなのでアルファをフェード）
+            const lfi = c.fadeIn || 0, lfo = c.fadeOut || 0;
+            let lfade = '';
+            if (lfi > 0) lfade += `,fade=t=in:st=0:d=${lfi.toFixed(3)}:alpha=1`;
+            if (lfo > 0) lfade += `,fade=t=out:st=${Math.max(0, dur - lfo).toFixed(3)}:d=${lfo.toFixed(3)}:alpha=1`;
             // スケール済み yuva クリップを作る共通部分
             const sc = `sc${lab}`;
             if (c.type === 'image') {
               inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', c.path);
-              filterParts.push(`[${idx}:v]${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${aaF}[${sc}]`);
+              filterParts.push(`[${idx}:v]${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
             } else {
               inputArgs.push('-i', c.path);
-              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${aaF}[${sc}]`);
+              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
             }
             if (rot) {
               // クリップ中心(cx,cy)まわりに回転し、透明な全画面へ overlay（中心を保ったまま配置）
@@ -376,12 +389,19 @@ async function exportTimeline(payload, onProgress, registerProc) {
         writeDataUrlPng(op.dataUrl, pngPath);
         const s = Math.max(0, op.start), e = Math.max(0, op.end);
         const animated = op.anim && op.anim !== 'none';
+        const pfi = op.fadeIn || 0, pfo = op.fadeOut || 0;
         const idx = inputIndex++;
-        if (animated) {
+        if (animated || pfi > 0 || pfo > 0) {
+          // フェード or アニメ：全尺ループ＋アルファフェード＋表示窓ゲート
           const ad = Math.min(0.45, Math.max(0.05, (e - s) / 2));
+          const inD = pfi > 0 ? pfi : (animated ? ad : 0);
+          const outD = pfo > 0 ? pfo : (animated ? ad : 0);
+          let f = '';
+          if (inD > 0) f += `fade=t=in:st=${s.toFixed(3)}:d=${inD.toFixed(3)}:alpha=1,`;
+          if (outD > 0) f += `fade=t=out:st=${Math.max(0, e - outD).toFixed(3)}:d=${outD.toFixed(3)}:alpha=1,`;
           inputArgs.push('-loop', '1', '-t', DUR.toFixed(3), '-i', pngPath);
-          filterParts.push(`[${idx}:v]fade=t=in:st=${s.toFixed(3)}:d=${ad.toFixed(3)}:alpha=1,fade=t=out:st=${(e - ad).toFixed(3)}:d=${ad.toFixed(3)}:alpha=1[ovin${j}]`);
-          filterParts.push(`[${prevV}][ovin${j}]overlay=0:0[ov${j}]`);
+          filterParts.push(`[${idx}:v]${f ? f.slice(0, -1) : 'null'}[ovin${j}]`);
+          filterParts.push(`[${prevV}][ovin${j}]overlay=0:0:enable='gte(t\\,${s.toFixed(3)})*lt(t\\,${e.toFixed(3)})'[ov${j}]`);
         } else {
           inputArgs.push('-i', pngPath);
           filterParts.push(`[${prevV}][${idx}:v]overlay=0:0:enable='gte(t\\,${s.toFixed(3)})*lt(t\\,${e.toFixed(3)})'[ov${j}]`);
@@ -401,9 +421,14 @@ async function exportTimeline(payload, onProgress, registerProc) {
         const ac = audioClips[k];
         const ms = Math.round(Math.max(0, ac.start) * 1000);
         const vol = ac.volume != null ? ac.volume : 1;
+        const adur = Math.max(0, ac.out - ac.in);
+        const afi = ac.fadeIn || 0, afo = ac.fadeOut || 0;
+        let af = '';
+        if (afi > 0) af += `,afade=t=in:st=0:d=${afi.toFixed(3)}`;
+        if (afo > 0) af += `,afade=t=out:st=${Math.max(0, adur - afo).toFixed(3)}:d=${afo.toFixed(3)}`;
         const idx = inputIndex++;
         inputArgs.push('-i', ac.path);
-        filterParts.push(`[${idx}:a]atrim=start=${ac.in.toFixed(3)}:end=${ac.out.toFixed(3)},asetpts=PTS-STARTPTS,volume=${vol.toFixed(3)},adelay=${ms}|${ms},${AFMT}[aclip${k}]`);
+        filterParts.push(`[${idx}:a]atrim=start=${ac.in.toFixed(3)}:end=${ac.out.toFixed(3)},asetpts=PTS-STARTPTS,volume=${vol.toFixed(3)}${af},adelay=${ms}|${ms},${AFMT}[aclip${k}]`);
         aLabels.push(`aclip${k}`);
       }
       filterParts.push(`${aLabels.map((l) => `[${l}]`).join('')}amix=inputs=${aLabels.length}:normalize=0:duration=longest[amixed]`);

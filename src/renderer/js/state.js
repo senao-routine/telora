@@ -178,6 +178,17 @@ export function clipDur(c) {
 }
 export function clipEnd(c) { return c.start + clipDur(c); }
 
+// フェードイン/アウトによる時刻 t での係数(0..1)。映像=アルファ、音声=音量に使う。
+export function clipFadeAlpha(c, t) {
+  const dur = clipDur(c); if (dur <= 0) return 1;
+  const fi = c.fadeIn || 0, fo = c.fadeOut || 0;
+  const local = t - c.start;
+  let a = 1;
+  if (fi > 0 && local < fi) a = Math.min(a, local / fi);
+  if (fo > 0 && local > dur - fo) a = Math.min(a, (dur - local) / fo);
+  return Math.max(0, Math.min(1, a));
+}
+
 export function mediaById(id) { return state.project.media.find((m) => m.id === id) || null; }
 
 // 全クリップから ID で検索

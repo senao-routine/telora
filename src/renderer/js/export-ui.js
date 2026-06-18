@@ -71,7 +71,7 @@ export async function runExport() {
       const op = (c.transform && c.transform.opacity != null) ? c.transform.opacity : 1;
       const rotation = (c.transform && c.transform.rotation) || 0;
       const crop = (c.transform && c.transform.crop) || null;
-      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, opacity: op, rotation, crop, ...rect });
+      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, opacity: op, rotation, crop, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0, ...rect });
     }
   }
 
@@ -102,13 +102,13 @@ export async function runExport() {
     for (const clip of track.clips) {
       if (clipDur(clip) <= 0) continue;
       if (clip.kind === 'text') {
-        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H, clip.opacity != null ? clip.opacity : 1), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none' });
+        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H, clip.opacity != null ? clip.opacity : 1), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none', fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       } else if (clip.kind === 'image' && !isBase) {
         const m = mediaById(clip.mediaId);
         if (!m) continue;
         // eslint-disable-next-line no-await-in-loop
         const dataUrl = await renderImageOverlayPng(clip, m, W, H);
-        if (dataUrl) pngs.push({ kind: 'png', dataUrl, start: clip.start, end: clipEnd(clip), anim: 'none' });
+        if (dataUrl) pngs.push({ kind: 'png', dataUrl, start: clip.start, end: clipEnd(clip), anim: 'none', fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       } else if (clip.kind === 'video' && !isBase) {
         const m = mediaById(clip.mediaId);
         if (!m || clipDur(clip) <= 0.02) continue;
@@ -116,9 +116,9 @@ export async function runExport() {
         const op = (clip.transform && clip.transform.opacity != null) ? clip.transform.opacity : 1;
         const rotation = (clip.transform && clip.transform.rotation) || 0;
         const crop = (clip.transform && clip.transform.crop) || null;
-        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y, opacity: op, rotation, crop });
+        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y, opacity: op, rotation, crop, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
         // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ）
-        if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1 });
+        if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       }
     }
     if (videoClips.length) layers.push({ kind: 'video', clips: videoClips });
@@ -131,7 +131,7 @@ export async function runExport() {
     for (const clip of track.clips) {
       const m = mediaById(clip.mediaId);
       if (!m || clipDur(clip) <= 0.02) continue;
-      audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1 });
+      audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
     }
   }
 
