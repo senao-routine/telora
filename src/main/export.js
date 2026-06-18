@@ -176,7 +176,9 @@ function writeDataUrlPng(dataUrl, file) {
  */
 async function exportTimeline(payload, onProgress, registerProc) {
   const { output, baseClips = [], overlays = [], audioClips = [], outputPath } = payload;
-  if (baseClips.length === 0 && overlays.length === 0 && audioClips.length === 0) {
+  const layers = payload.layers || null; // 下→上順の合成レイヤ（あれば track 順に厳密合成）
+  const hasLayers = layers && layers.length > 0;
+  if (baseClips.length === 0 && overlays.length === 0 && audioClips.length === 0 && !hasLayers) {
     return { ok: false, error: '書き出す内容がありません。先に素材をタイムラインへ追加してください。' };
   }
 
@@ -189,6 +191,10 @@ async function exportTimeline(payload, onProgress, registerProc) {
   for (const c of baseClips) DUR = Math.max(DUR, c.start + Math.max(0, c.out - c.in));
   for (const o of overlays) DUR = Math.max(DUR, o.end);
   for (const ac of audioClips) DUR = Math.max(DUR, ac.start + Math.max(0, ac.out - ac.in));
+  if (hasLayers) for (const l of layers) {
+    if (l.kind === 'png') DUR = Math.max(DUR, l.end);
+    else for (const c of (l.clips || [])) DUR = Math.max(DUR, c.start + Math.max(0, c.out - c.in));
+  }
   DUR = Math.max(0.1, DUR);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tce-export-'));
@@ -228,20 +234,24 @@ async function exportTimeline(payload, onProgress, registerProc) {
       const dur = Math.max(0.02, seg.dur);
       // concat 連結のため全セグメントを同一フォーマット(yuv420p/SAR1/fps)に揃える
       const VFMT = `format=yuv420p,setsar=1,fps=${FPS}`;
+      // transform 指定（pw/ph/x/y）があればその大きさ・位置で配置（周囲は黒）。無ければ全画面フィット。
+      const place = (seg.clip && seg.clip.pw)
+        ? `scale=${seg.clip.pw}:${seg.clip.ph},pad=${W}:${H}:${seg.clip.x}:${seg.clip.y}:color=black,setsar=1`
+        : SCALE_PAD;
       if (seg.type === 'black') {
         filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},${VFMT}[v${i}]`);
         filterParts.push(`${SILENCE(dur)}[a${i}]`);
       } else if (seg.type === 'image') {
         const idx = inputIndex++;
         inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', seg.clip.path);
-        filterParts.push(`[${idx}:v]${SCALE_PAD},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}[v${i}]`);
+        filterParts.push(`[${idx}:v]${place},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}[v${i}]`);
         filterParts.push(`${SILENCE(dur)}[a${i}]`);
       } else {
         const c = seg.clip;
         const inPt = seg.in != null ? seg.in : c.in; // 重なりスキップ後の実イン点
         const idx = inputIndex++;
         inputArgs.push('-i', c.path);
-        filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${SCALE_PAD},${VFMT}[v${i}]`);
+        filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${place},${VFMT}[v${i}]`);
         // eslint-disable-next-line no-await-in-loop
         if (await sourceHasAudio(c.path)) {
           // 音声が映像より短い素材でも concat が破綻しないよう、セグメント尺まで無音パディング
@@ -258,69 +268,78 @@ async function exportTimeline(payload, onProgress, registerProc) {
 
     let prevV = 'basev';
 
-    // 非ベース動画トラック（PIP）：各レイヤを「全尺の透過RGBA連結」にして base へ overlay。
-    // 透明な隙間 + 各クリップを scale して pad で配置（透明背景）。pts 0 始まりなので framesync 問題なし。
-    const videoLayers = payload.videoLayers || [];
-    for (let L = 0; L < videoLayers.length; L++) {
-      const clips = [...videoLayers[L]].sort((a, b) => a.start - b.start);
-      const lsegs = [];
-      let lc = 0;
-      for (const c of clips) {
-        const cs = Math.max(0, c.start);
-        const ce = cs + Math.max(0, c.out - c.in);
-        if (ce <= lc + 1e-3) continue;
-        const vis = Math.max(cs, lc);
-        if (vis > lc + 1e-3) lsegs.push({ gap: true, dur: vis - lc });
-        const effIn = c.in + (vis - cs);
-        lsegs.push({ c, in: effIn, dur: Math.max(0.02, c.out - effIn) });
-        lc = vis + (c.out - effIn);
-      }
-      if (lc < DUR - 1e-3) lsegs.push({ gap: true, dur: DUR - lc });
-      if (lsegs.length === 0) continue;
-
-      const labels = [];
-      for (let i = 0; i < lsegs.length; i++) {
-        const s = lsegs[i]; const dur = Math.max(0.02, s.dur); const lab = `lv${L}_${i}`;
-        if (s.gap) {
-          filterParts.push(`color=c=black@0.0:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[${lab}]`);
-        } else {
-          const c = s.c; const idx = inputIndex++;
-          const PAD = `pad=${W}:${H}:${c.x}:${c.y}:color=black@0.0`;
-          if (c.type === 'image') {
-            inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', c.path);
-            filterParts.push(`[${idx}:v]scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1,${PAD}[${lab}]`);
-          } else {
-            inputArgs.push('-i', c.path);
-            filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1,${PAD}[${lab}]`);
-          }
-        }
-        labels.push(`[${lab}]`);
-      }
-      filterParts.push(`${labels.join('')}concat=n=${lsegs.length}:v=1[vlayer${L}]`);
-      filterParts.push(`[${prevV}][vlayer${L}]overlay=0:0[vlc${L}]`);
-      prevV = `vlc${L}`;
+    // 合成レイヤを下→上の順で適用（=タイムラインのトラック順）。上のクリップが下を隠す＝
+    // 他ソフト同様のトラック優先合成。layers 未指定時は従来順（動画レイヤ→PNG）で構築。
+    let ops;
+    if (hasLayers) {
+      ops = layers;
+    } else {
+      ops = [];
+      for (const clips of (payload.videoLayers || [])) ops.push({ kind: 'video', clips });
+      for (const ov of overlays) ops.push({ kind: 'png', dataUrl: ov.dataUrl, start: ov.start, end: ov.end, anim: ov.anim });
     }
 
-    // フルフレーム PNG オーバーレイ（テロップ・オーバーレイ画像）。PNG は pts 0 始まりなので framesync 問題なし。
-    for (let j = 0; j < overlays.length; j++) {
-      const ov = overlays[j];
-      const pngPath = path.join(tmpDir, `ov_${j}.png`);
-      writeDataUrlPng(ov.dataUrl, pngPath);
-      const s = Math.max(0, ov.start), e = Math.max(0, ov.end);
-      const animated = ov.anim && ov.anim !== 'none';
-      const idx = inputIndex++;
-      if (animated) {
-        // アニメーション付き：全尺ぶん読み込み（pts 0 始まり）、表示窓 [s,e] でアルファをフェード
-        const ad = Math.min(0.45, Math.max(0.05, (e - s) / 2));
-        inputArgs.push('-loop', '1', '-t', DUR.toFixed(3), '-i', pngPath);
-        filterParts.push(`[${idx}:v]fade=t=in:st=${s.toFixed(3)}:d=${ad.toFixed(3)}:alpha=1,fade=t=out:st=${(e - ad).toFixed(3)}:d=${ad.toFixed(3)}:alpha=1[ovin${j}]`);
-        filterParts.push(`[${prevV}][ovin${j}]overlay=0:0[ov${j}]`);
-      } else {
-        // 静止：単一フレーム＋時間ゲート（終端は排他 gte*lt）
-        inputArgs.push('-i', pngPath);
-        filterParts.push(`[${prevV}][${idx}:v]overlay=0:0:enable='gte(t\\,${s.toFixed(3)})*lt(t\\,${e.toFixed(3)})'[ov${j}]`);
+    let opSeq = 0;
+    for (const op of ops) {
+      if (op.kind === 'video') {
+        // 動画レイヤ：全尺の透過RGBA連結（透明な隙間＋各クリップを scale/pad で配置）にして overlay。
+        const clips = [...(op.clips || [])].sort((a, b) => a.start - b.start);
+        const lsegs = [];
+        let lc = 0;
+        for (const c of clips) {
+          const cs = Math.max(0, c.start);
+          const ce = cs + Math.max(0, c.out - c.in);
+          if (ce <= lc + 1e-3) continue;
+          const vis = Math.max(cs, lc);
+          if (vis > lc + 1e-3) lsegs.push({ gap: true, dur: vis - lc });
+          const effIn = c.in + (vis - cs);
+          lsegs.push({ c, in: effIn, dur: Math.max(0.02, c.out - effIn) });
+          lc = vis + (c.out - effIn);
+        }
+        if (lc < DUR - 1e-3) lsegs.push({ gap: true, dur: DUR - lc });
+        if (lsegs.length === 0) continue;
+
+        const L = opSeq++;
+        const labels = [];
+        for (let i = 0; i < lsegs.length; i++) {
+          const s = lsegs[i]; const dur = Math.max(0.02, s.dur); const lab = `lv${L}_${i}`;
+          if (s.gap) {
+            filterParts.push(`color=c=black@0.0:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[${lab}]`);
+          } else {
+            const c = s.c; const idx = inputIndex++;
+            const PAD = `pad=${W}:${H}:${c.x}:${c.y}:color=black@0.0`;
+            if (c.type === 'image') {
+              inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', c.path);
+              filterParts.push(`[${idx}:v]scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1,${PAD}[${lab}]`);
+            } else {
+              inputArgs.push('-i', c.path);
+              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1,${PAD}[${lab}]`);
+            }
+          }
+          labels.push(`[${lab}]`);
+        }
+        filterParts.push(`${labels.join('')}concat=n=${lsegs.length}:v=1[vlayer${L}]`);
+        filterParts.push(`[${prevV}][vlayer${L}]overlay=0:0[vlc${L}]`);
+        prevV = `vlc${L}`;
+      } else if (op.kind === 'png') {
+        // フルフレーム PNG オーバーレイ（テロップ・オーバーレイ画像）。PNG は pts 0 始まり。
+        const j = opSeq++;
+        const pngPath = path.join(tmpDir, `ov_${j}.png`);
+        writeDataUrlPng(op.dataUrl, pngPath);
+        const s = Math.max(0, op.start), e = Math.max(0, op.end);
+        const animated = op.anim && op.anim !== 'none';
+        const idx = inputIndex++;
+        if (animated) {
+          const ad = Math.min(0.45, Math.max(0.05, (e - s) / 2));
+          inputArgs.push('-loop', '1', '-t', DUR.toFixed(3), '-i', pngPath);
+          filterParts.push(`[${idx}:v]fade=t=in:st=${s.toFixed(3)}:d=${ad.toFixed(3)}:alpha=1,fade=t=out:st=${(e - ad).toFixed(3)}:d=${ad.toFixed(3)}:alpha=1[ovin${j}]`);
+          filterParts.push(`[${prevV}][ovin${j}]overlay=0:0[ov${j}]`);
+        } else {
+          inputArgs.push('-i', pngPath);
+          filterParts.push(`[${prevV}][${idx}:v]overlay=0:0:enable='gte(t\\,${s.toFixed(3)})*lt(t\\,${e.toFixed(3)})'[ov${j}]`);
+        }
+        prevV = `ov${j}`;
       }
-      prevV = `ov${j}`;
     }
 
     filterParts.push(`[${prevV}]format=yuv420p[vout]`);

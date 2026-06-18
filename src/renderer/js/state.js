@@ -6,14 +6,16 @@ export const DEFAULT_IMAGE_DUR = 5;   // 画像クリップの既定表示秒数
 export const IMAGE_MAX_DUR = 3600;    // 画像クリップの最大尺
 export const MIN_CLIP = 0.1;
 
-// トラック構成（配列の先頭が最前面レイヤ。合成は末尾＝最背面から行う）
+// トラック構成（配列の先頭が最前面レイヤ＝上）。
+// kind は 'visual'（動画・画像・テロップを自由に配置）と 'audio' の2種のみ。
+// 上半分＝visual、下＝audio。最下段の visual トラックがベース（主映像＝音声・コーデックフォールバック担当）。
+// 初期状態で visual 3 層 + audio 1 層を用意しておき、ドラッグ配置・上下移動をしやすくする。
 function freshTracks() {
-  // 上から：テロップ → オーバーレイ → メイン動画 → 音声（Filmora 風に映像が上・音声が下）
   return [
-    { id: uid('trk'), kind: 'text', name: 'テロップ', clips: [] },
-    { id: uid('trk'), kind: 'overlay', name: 'オーバーレイ', clips: [] },
-    { id: uid('trk'), kind: 'video', name: 'メイン', clips: [], base: true },
-    { id: uid('trk'), kind: 'audio', name: 'オーディオ', clips: [] },
+    { id: uid('trk'), kind: 'visual', name: 'V3', clips: [] },
+    { id: uid('trk'), kind: 'visual', name: 'V2', clips: [] },
+    { id: uid('trk'), kind: 'visual', name: 'V1', clips: [], base: true },
+    { id: uid('trk'), kind: 'audio', name: 'A1', clips: [] },
   ];
 }
 
@@ -122,8 +124,18 @@ function sanitizeSelection() {
 export function selectAllTelops() { setSelection({ allTelops: true }); }
 export function getTextClips() {
   const out = [];
-  for (const tr of state.project.tracks) if (tr.kind === 'text') for (const c of tr.clips) out.push(c);
+  for (const tr of state.project.tracks) for (const c of tr.clips) if (c.kind === 'text') out.push(c);
   return out;
+}
+
+// あるトラックの [start, start+dur) が空いているか（ignoreId は判定から除外）
+export function slotFree(track, start, dur, ignoreId = null) {
+  const end = start + dur;
+  for (const c of track.clips) {
+    if (ignoreId && c.id === ignoreId) continue;
+    if (start < clipEnd(c) - 1e-6 && end > c.start + 1e-6) return false;
+  }
+  return true;
 }
 
 // ---- 再生位置 ----
@@ -153,9 +165,10 @@ export function clearRange() { state.ui.range = null; emit('range'); }
 // ---- トラック / クリップ計算 ----
 export function getTracks() { return state.project.tracks; }
 export function getTrack(id) { return state.project.tracks.find((t) => t.id === id) || null; }
+export function visualTracks() { return state.project.tracks.filter((t) => t.kind === 'visual'); }
 export function baseTrack() {
-  const v = state.project.tracks.filter((t) => t.kind === 'video');
-  return v.length ? v[v.length - 1] : null; // 最背面の動画トラック
+  const v = visualTracks();
+  return v.length ? v[v.length - 1] : null; // 最下段の visual トラック＝ベース
 }
 export function tracksBottomToTop() { return [...state.project.tracks].reverse(); }
 
@@ -300,19 +313,16 @@ export function applyTelopPreset(clipId, presetIndex) {
 }
 
 // ---- トラック（レイヤ）操作 ----
-export function addTrack(kind) {
-  pushHistory();
-  const baseName = kind === 'text' ? 'テロップ' : kind === 'overlay' ? 'オーバーレイ' : '動画';
+// kind: 'visual' | 'audio'。visual は上へ、audio は下へ追加。
+export function addTrack(kind = 'visual', { silent = false } = {}) {
+  if (!silent) pushHistory();
+  const prefix = kind === 'audio' ? 'A' : 'V';
   const count = state.project.tracks.filter((t) => t.kind === kind).length;
-  const track = { id: uid('trk'), kind, name: count > 0 ? `${baseName}${count + 1}` : baseName, clips: [] };
-  const tracks = state.project.tracks;
-  if (kind === 'text') {
-    tracks.unshift(track); // テキストは最前面（上）へ
-  } else if (kind === 'audio') {
-    tracks.push(track); // 音声は最下部（映像の下）へ
+  const track = { id: uid('trk'), kind, name: `${prefix}${count + 1}`, clips: [] };
+  if (kind === 'audio') {
+    state.project.tracks.push(track); // 音声は最下段へ
   } else {
-    const baseIdx = tracks.findIndex((t) => t.base);
-    tracks.splice(baseIdx >= 0 ? baseIdx : tracks.length, 0, track); // ベースの直上へ
+    state.project.tracks.unshift(track); // visual は最上段へ
   }
   markDirty();
   emit('project');

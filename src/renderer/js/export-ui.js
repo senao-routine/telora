@@ -31,18 +31,34 @@ function renderImageOverlayPng(clip, media, W, H) {
   });
 }
 
+// transform（中心x,y・拡大率scale）から配置矩形 pw/ph/x/y を算出（preview の drawTransformed と同式・偶数/画面内クランプ）
+function pipRect(m, transform, W, H) {
+  const mr = (m.width || 16) / (m.height || 9);
+  let bw = W, bh = W / mr; if (bh > H) { bh = H; bw = H * mr; }
+  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
+  let pw = Math.round(bw * tr.scale), ph = Math.round(bh * tr.scale);
+  pw = Math.min(W, Math.max(2, pw - (pw % 2))); ph = Math.min(H, Math.max(2, ph - (ph % 2)));
+  let x = Math.round(tr.x * W - pw / 2), y = Math.round(tr.y * H - ph / 2);
+  x = Math.max(0, Math.min(W - pw, x)); y = Math.max(0, Math.min(H - ph, y));
+  x -= x % 2; y -= y % 2;
+  return { pw, ph, x, y };
+}
+
 export async function runExport() {
   const project = getProject();
   const W = project.settings.width, H = project.settings.height, fps = project.settings.fps || 30;
   const base = baseTrack();
 
-  // メイントラックのクリップ
+  // ベーストラック（最下段 visual）の背景クリップ＝動画・画像。テロップはオーバーレイへ。
+  // transform（位置・サイズ）も pw/ph/x/y にして渡す（scale=1・中央なら全画面フィット）。
   const baseClips = [];
   if (base) {
     for (const c of base.clips) {
+      if (c.kind === 'text') continue; // テロップは overlays で処理
       const m = mediaById(c.mediaId);
       if (!m || clipDur(c) <= 0.02) continue;
-      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start });
+      const rect = pipRect(m, c.transform, W, H);
+      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, ...rect });
     }
   }
 
@@ -60,50 +76,40 @@ export async function runExport() {
   showModal();
   setProgress(0, 'レイヤを準備しています…');
 
-  const overlays = [];
+  // 合成レイヤを「下→上」のトラック順で1本のリストにまとめる。これにより上のトラックの
+  // 不透明クリップ（動画・画像）が下を隠し、書き出しもプレビューと同じ重なり順になる（他ソフト同様）。
+  // 各 visual トラック内では「動画レイヤ → 画像/テロップPNG」の順（同トラック内は時間が重ならない）。
+  const layers = [];
+  const audioClips = []; // 音声トラック＋非ベース動画クリップの音声をここに集約
   for (const track of tracksBottomToTop()) {
-    if (track.base) continue;
-    if (track.kind === 'text') {
-      for (const clip of track.clips) {
-        if (clipDur(clip) <= 0) continue;
-        overlays.push({ dataUrl: renderTelopPng(clip, W, H), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none' });
-      }
-    } else {
-      for (const clip of track.clips) {
-        if (clip.kind !== 'image' || clipDur(clip) <= 0) continue;
+    if (track.kind !== 'visual') continue;
+    const isBase = !!track.base;
+    const videoClips = [];
+    const pngs = [];
+    for (const clip of track.clips) {
+      if (clipDur(clip) <= 0) continue;
+      if (clip.kind === 'text') {
+        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none' });
+      } else if (clip.kind === 'image' && !isBase) {
         const m = mediaById(clip.mediaId);
         if (!m) continue;
         // eslint-disable-next-line no-await-in-loop
         const dataUrl = await renderImageOverlayPng(clip, m, W, H);
-        if (dataUrl) overlays.push({ dataUrl, start: clip.start, end: clipEnd(clip), anim: 'none' });
+        if (dataUrl) pngs.push({ kind: 'png', dataUrl, start: clip.start, end: clipEnd(clip), anim: 'none' });
+      } else if (clip.kind === 'video' && !isBase) {
+        const m = mediaById(clip.mediaId);
+        if (!m || clipDur(clip) <= 0.02) continue;
+        const { pw, ph, x, y } = pipRect(m, clip.transform, W, H);
+        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y });
+        // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ）
+        if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1 });
       }
     }
-  }
-
-  // 非ベース動画トラック（PIP・重ね合成）。下→上の順で各レイヤをまとめる。
-  const videoLayers = [];
-  for (const track of tracksBottomToTop()) {
-    if (track.base || track.kind !== 'video') continue;
-    const clips = [];
-    for (const clip of track.clips) {
-      const m = mediaById(clip.mediaId);
-      if (!m || clipDur(clip) <= 0.02) continue;
-      // PIP の配置・サイズを preview の drawTransformed と同じ式で算出（偶数・画面内クランプ）
-      const mr = (m.width || 16) / (m.height || 9);
-      let bw = W, bh = W / mr; if (bh > H) { bh = H; bw = H * mr; }
-      const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
-      let pw = Math.round(bw * tr.scale), ph = Math.round(bh * tr.scale);
-      pw = Math.min(W, Math.max(2, pw - (pw % 2))); ph = Math.min(H, Math.max(2, ph - (ph % 2)));
-      let x = Math.round(tr.x * W - pw / 2), y = Math.round(tr.y * H - ph / 2);
-      x = Math.max(0, Math.min(W - pw, x)); y = Math.max(0, Math.min(H - ph, y));
-      x -= x % 2; y -= y % 2;
-      clips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y });
-    }
-    if (clips.length) videoLayers.push(clips);
+    if (videoClips.length) layers.push({ kind: 'video', clips: videoClips });
+    for (const p of pngs) layers.push(p);
   }
 
   // 音声トラックのクリップ（BGM・ナレーション等）
-  const audioClips = [];
   for (const track of project.tracks) {
     if (track.kind !== 'audio') continue;
     for (const clip of track.clips) {
@@ -113,13 +119,13 @@ export async function runExport() {
     }
   }
 
-  if (baseClips.length === 0 && overlays.length === 0 && audioClips.length === 0 && videoLayers.length === 0) {
+  if (baseClips.length === 0 && layers.length === 0 && audioClips.length === 0) {
     hideModal();
     toast('書き出す内容がありません。', 'err');
     return;
   }
 
-  const payload = { output: { width: W, height: H, fps }, duration, baseClips, videoLayers, overlays, audioClips, outputPath: dlg.filePath };
+  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: dlg.filePath };
 
   if (unsubProgress) unsubProgress();
   unsubProgress = window.api.onExportProgress(({ ratio, message }) => setProgress(ratio, message));

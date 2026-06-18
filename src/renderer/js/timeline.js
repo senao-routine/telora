@@ -12,7 +12,16 @@ import { seek } from './preview.js';
 const MIN_TEXT = 0.2;
 const DRAG_THRESHOLD = 4;
 const SNAP_PX = 8;
-const TRACK_H = { video: 68, overlay: 52, text: 46, audio: 54 };
+const TRACK_H = { visual: 64, audio: 54 };
+// トラックは種別に縛られないので、ヘッダのアイコンは中身から推定して表示する
+function trackIcon(track) {
+  if (track.kind === 'audio') return '🔊';
+  const kinds = new Set(track.clips.map((c) => c.kind));
+  if (kinds.has('video')) return '🎞';
+  if (kinds.has('image')) return '🖼';
+  if (kinds.has('text')) return '🅣';
+  return '🎬';
+}
 const RULER_H = 26;
 
 let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl, rangeBandEl;
@@ -98,8 +107,7 @@ function renderHeaders() {
   headersEl.innerHTML = '';
   headersEl.appendChild(el('div', { class: 'th-ruler', style: `height:${RULER_H}px` }));
   for (const track of getTracks()) {
-    const icon = track.kind === 'text' ? '🅣' : track.kind === 'overlay' ? '🖼' : track.kind === 'audio' ? '🔊' : '🎞';
-    const children = [el('span', { class: 'th-ico', text: icon }), el('span', { class: 'th-name', text: track.name })];
+    const children = [el('span', { class: 'th-ico', text: trackIcon(track) }), el('span', { class: 'th-name', text: track.name })];
     if (!track.base) {
       children.push(el('button', { class: 'th-del', title: 'この層を削除', onClick: (e) => { e.stopPropagation(); if (track.clips.length === 0 || confirm(`「${track.name}」を削除しますか？`)) removeTrack(track.id); } }, ['✕']));
     }
@@ -233,7 +241,7 @@ function startClipDrag(e, track, clip) {
   // 履歴は実際に動かした瞬間に積む（単なる選択クリックで undo 履歴を汚さない）
   drag = {
     kind: trim ? 'trim' : 'move', side: trim,
-    trackId: track.id, clipId: clip.id, startX: e.clientX, moved: false, historyPushed: false,
+    trackId: track.id, clipId: clip.id, startX: e.clientX, startY: e.clientY, moved: false, historyPushed: false,
     alt: e.altKey, duplicated: false,
     origStart: clip.start, origIn: clip.in, origOut: clip.out, origEnd: clip.end,
   };
@@ -250,7 +258,8 @@ function onMove(e) {
   }
 
   const dt = (e.clientX - drag.startX) / P;
-  if (Math.abs(e.clientX - drag.startX) < DRAG_THRESHOLD && !drag.moved && drag.kind === 'move') return;
+  // 横・縦どちらの動きでもドラッグ開始とみなす（縦＝トラック間移動のため）
+  if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD && !drag.moved && drag.kind === 'move') return;
   drag.moved = true;
   if (!drag.historyPushed) { pushHistory(); drag.historyPushed = true; }
 
@@ -275,6 +284,7 @@ function onMove(e) {
   const { clip } = found;
 
   if (drag.kind === 'move') {
+    moveClipVertically(e, found, clip); // 縦方向＝トラック間移動（最上段より上なら新規トラック生成）
     let ns = snapTime(Math.max(0, drag.origStart + dt), clip.id);
     ns = Math.max(0, ns);
     if (clip.kind === 'text') { const d = drag.origEnd - drag.origStart; clip.start = ns; clip.end = ns + d; }
@@ -312,11 +322,20 @@ function onUp() {
   if (drag.kind === 'range') { drag = null; return; } // 範囲は保持
   const wasEdit = drag.kind !== 'scrub';
   const trackId = drag.trackId;
+  const spawnedTopId = drag.spawnedTopId;
   drag = null;
   if (wasEdit) {
+    // 上ドラッグで生成したが結局空になったトラックは片付ける
+    if (spawnedTopId) {
+      const st = getTrack(spawnedTopId);
+      if (st && !st.base && st.clips.length === 0) {
+        const arr = getTracks(); const i = arr.indexOf(st); if (i >= 0) arr.splice(i, 1);
+      }
+    }
     // クリップを start 順に整列（重なりはそのまま許容）
     const track = trackId ? getTrack(trackId) : null;
-    if (track) { track.clips.sort((a, b) => a.start - b.start); emit('project'); }
+    if (track) track.clips.sort((a, b) => a.start - b.start);
+    emit('project');
   }
   if (!isPlaying()) seek(getPlayhead());
 }
@@ -327,6 +346,57 @@ function getTrackClip(clipId) {
     if (clip) return { track, clip };
   }
   return null;
+}
+
+// ポインタの Y 座標があるトラック行の id を返す（行外は最寄りにクランプ）
+function trackRowAtY(clientY) {
+  const rows = tracksEl.querySelectorAll('.track');
+  if (!rows.length) return null;
+  for (const row of rows) {
+    const r = row.getBoundingClientRect();
+    if (clientY >= r.top && clientY < r.bottom) return row.dataset.track;
+  }
+  const first = rows[0].getBoundingClientRect();
+  return (clientY < first.top ? rows[0] : rows[rows.length - 1]).dataset.track;
+}
+
+// クリップとトラックの種別が両立するか（音声は audio トラック、映像系は visual トラック）
+function trackCompatible(clip, track) {
+  return track.kind === 'audio' ? clip.kind === 'audio' : clip.kind !== 'audio';
+}
+
+function relocate(fromTrack, toTrack, clip) {
+  const i = fromTrack.clips.indexOf(clip);
+  if (i >= 0) fromTrack.clips.splice(i, 1);
+  toTrack.clips.push(clip);
+}
+
+// 縦ドラッグでのトラック間移動。最上段より上へドラッグした視覚クリップは
+// 新しい最上位 visual トラックを自動生成して移動する（1ドラッグにつき1つだけ）。
+function moveClipVertically(e, found, clip) {
+  const rows = tracksEl.querySelectorAll('.track');
+  const aboveTop = clip.kind !== 'audio' && rows.length && e.clientY < rows[0].getBoundingClientRect().top;
+  if (aboveTop) {
+    // すでに今回生成したトップトラック上にいるなら追加生成しない
+    if (!drag.spawnedTopId || found.track.id !== drag.spawnedTopId) {
+      const tracks = getTracks();
+      const nt = { id: uid('trk'), kind: 'visual', name: 'V' + (tracks.filter((t) => t.kind === 'visual').length + 1), clips: [] };
+      tracks.unshift(nt);
+      relocate(found.track, nt, clip);
+      drag.spawnedTopId = nt.id; drag.trackId = nt.id;
+      setSelection({ trackId: nt.id, clipId: clip.id });
+    }
+    return;
+  }
+  const tgtId = trackRowAtY(e.clientY);
+  if (tgtId && tgtId !== found.track.id) {
+    const tgt = getTrack(tgtId);
+    if (tgt && trackCompatible(clip, tgt)) {
+      relocate(found.track, tgt, clip);
+      drag.trackId = tgt.id;
+      setSelection({ trackId: tgt.id, clipId: clip.id });
+    }
+  }
 }
 
 // ---- ズーム ----

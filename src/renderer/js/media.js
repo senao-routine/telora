@@ -163,37 +163,74 @@ export async function importMedia(paths, { addToTimeline = true } = {}) {
   if (skipped) toast(`${skipped} 件は対応していない形式のためスキップしました`, 'err');
 }
 
-// メディアをクリップとしてトラックへ追加
+// [start, start+dur) がトラック上で空いているか
+function slotFree(track, start, dur, ignoreId) {
+  const e = start + dur;
+  for (const c of track.clips) {
+    if (c.id === ignoreId) continue;
+    if (start < clipEnd(c) - 1e-6 && e > c.start + 1e-6) return false;
+  }
+  return true;
+}
+
+// メディアをクリップとしてトラックへ追加。
+// drop（trackId＋start 指定）で対象が埋まっていれば上位 visual トラックへ自動レイヤー化。
 export function addClipFromMedia(mediaId, { silent = false, trackId = null, start = null } = {}) {
   const m = mediaById(mediaId);
   if (!m) return;
+  const isAudio = m.type === 'audio';
+  let newClipId = null, finalTrackId = null;
 
-  // 配置先トラックを種別に応じて決定
-  let track = trackId ? getTrack(trackId) : null;
-  let needAudioTrack = false;
-  if (m.type === 'audio') {
-    // 音声は必ず音声トラックへ。無ければ新規作成（誤って映像トラックに置いて無音化するのを防ぐ）
-    if (!track || track.kind !== 'audio') track = getTracks().find((t) => t.kind === 'audio') || null;
-    if (!track) needAudioTrack = true;
-  } else if (m.type === 'video') {
-    if (!track || track.kind !== 'video') track = baseTrack();
-    if (!track) return;
-  } else { // image
-    if (!track || track.kind === 'text' || track.kind === 'audio') track = baseTrack();
-    if (!track) return;
-  }
-
-  let newClipId = null;
   mutate((p) => {
-    if (needAudioTrack) { track = { id: uid('trk'), kind: 'audio', name: 'オーディオ', clips: [] }; p.tracks.push(track); }
+    const tracks = () => p.tracks;
     const clip = makeClipFromMedia(m, 0);
-    const desired = start != null ? Math.max(0, start) : (track.base ? mainTrackEnd() : getPlayhead());
-    clip.start = findFreeSlot(track, desired, clipDur(clip), null);
-    track.clips.push(clip);
-    track.clips.sort((a, b) => a.start - b.start);
-    newClipId = clip.id;
+    const dur = clipDur(clip);
+
+    if (isAudio) {
+      let track = trackId ? tracks().find((t) => t.id === trackId && t.kind === 'audio') : null;
+      if (!track) track = tracks().find((t) => t.kind === 'audio');
+      if (!track) { track = { id: uid('trk'), kind: 'audio', name: 'A' + (tracks().filter((t) => t.kind === 'audio').length + 1), clips: [] }; p.tracks.push(track); }
+      const desired = start != null ? Math.max(0, start) : getPlayhead();
+      clip.start = slotFree(track, desired, dur) ? desired : findFreeSlot(track, desired, dur, null);
+      track.clips.push(clip); track.clips.sort((a, b) => a.start - b.start);
+      newClipId = clip.id; finalTrackId = track.id;
+      return;
+    }
+
+    // 視覚素材（動画・画像）
+    const visuals = () => p.tracks.filter((t) => t.kind === 'visual');
+    if (start == null) {
+      // ビンからの追加：ベース（最下段）visual トラックへ順次追加
+      let track = visuals()[visuals().length - 1];
+      if (!track) { track = { id: uid('trk'), kind: 'visual', name: 'V1', clips: [], base: true }; p.tracks.unshift(track); }
+      clip.start = mainTrackEnd();
+      clip.start = findFreeSlot(track, clip.start, dur, null);
+      track.clips.push(clip); track.clips.sort((a, b) => a.start - b.start);
+      newClipId = clip.id; finalTrackId = track.id;
+      return;
+    }
+    // ドロップ：指定 start に置く。対象トラックが埋まっていれば上位の空きトラック→無ければ新規上位トラック
+    const s = Math.max(0, start);
+    const list = visuals();
+    let target = trackId ? p.tracks.find((t) => t.id === trackId && t.kind === 'visual') : null;
+    let track = null;
+    if (target && slotFree(target, s, dur)) track = target;
+    if (!track) {
+      // 対象トラックより上（index 小）で空きを探す
+      const startIdx = target ? p.tracks.indexOf(target) : p.tracks.length;
+      for (let i = startIdx - 1; i >= 0; i--) { const t = p.tracks[i]; if (t.kind === 'visual' && slotFree(t, s, dur)) { track = t; break; } }
+    }
+    if (!track) {
+      // 新規 visual トラックを最上段に自動追加
+      track = { id: uid('trk'), kind: 'visual', name: 'V' + (list.length + 1), clips: [] };
+      p.tracks.unshift(track);
+    }
+    clip.start = s;
+    track.clips.push(clip); track.clips.sort((a, b) => a.start - b.start);
+    newClipId = clip.id; finalTrackId = track.id;
   });
-  setSelection({ trackId: track.id, clipId: newClipId });
+
+  if (finalTrackId && newClipId) setSelection({ trackId: finalTrackId, clipId: newClipId });
   if (!silent) toast(`「${m.name}」を追加しました`);
 }
 

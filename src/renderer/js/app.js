@@ -8,13 +8,13 @@ import {
   copySelection, pasteClipboard, cutSelection, duplicateSelection,
 } from './edit.js';
 import { runExport } from './export-ui.js';
-import { saveProject, openProject, updateTitle } from './project-io.js';
+import { saveProject, openProject, openProjectPath, getRecents, updateTitle } from './project-io.js';
 import { importSrtFromFile } from './import-srt.js';
 import { importXmlFromFile } from './import-xml.js';
 import { runTranscribe } from './transcribe-ui.js';
 import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
-  isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops,
+  isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
   getTool, setTool, toggleRangeTool,
 } from './state.js';
 import { toast } from './ui.js';
@@ -35,6 +35,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   wireKeyboard();
   wireFileDrop();
   wireTimelineResize();
+  wireHome();
 
   on('dirty', updateTitle);
   on('project', updateTitle);
@@ -43,11 +44,58 @@ window.addEventListener('DOMContentLoaded', async () => {
   on('settings', syncResoSelect);
   syncResoSelect();
 
+  showHome(); // 起動時はホーム（スタート）画面を表示
+
   try {
     const tools = await window.api.checkTools();
     if (!tools.ffmpeg) toast('注意: FFmpeg が見つかりません。書き出しには FFmpeg が必要です。', 'err');
   } catch (_) { /* noop */ }
 });
+
+// ---- ホーム（スタート）画面 ----
+function showHome() { renderRecents(); $('homeScreen').hidden = false; }
+function enterEditor() {
+  $('homeScreen').hidden = true;
+  emit('settings'); // プレビューのステージ寸法を再計算
+}
+function fmtDate(ts) {
+  try {
+    const d = new Date(ts); const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch (_) { return ''; }
+}
+function renderRecents() {
+  const ul = $('recentList');
+  if (!ul) return;
+  ul.innerHTML = '';
+  const recents = getRecents();
+  if (!recents.length) {
+    const li = document.createElement('li');
+    li.className = 'recent-empty';
+    li.textContent = 'まだプロジェクトがありません。「新規プロジェクト」から始めましょう。';
+    ul.appendChild(li);
+    return;
+  }
+  for (const r of recents) {
+    const li = document.createElement('li');
+    li.className = 'recent-item';
+    const name = document.createElement('div'); name.className = 'recent-name'; name.textContent = r.name || '(無題)';
+    const date = document.createElement('div'); date.className = 'recent-date'; date.textContent = fmtDate(r.ts);
+    const path = document.createElement('div'); path.className = 'recent-path'; path.textContent = r.path;
+    li.append(name, date, path);
+    li.onclick = async () => { const ok = await openProjectPath(r.path); if (ok) enterEditor(); else renderRecents(); };
+    ul.appendChild(li);
+  }
+}
+function wireHome() {
+  $('homeNew').onclick = () => { newProject(); enterEditor(); };
+  $('homeOpen').onclick = async () => { const ok = await openProject(); if (ok) enterEditor(); };
+  $('homeImport').onclick = () => { newProject(); enterEditor(); pickAndImport(); };
+  $('btnHome').onclick = () => {
+    if (getUI().dirty && !confirm('保存していない変更があります。ホームに戻りますか？')) return;
+    showHome();
+  };
+}
 
 function wireTopbar() {
   $('btnImport').onclick = pickAndImport;
@@ -100,10 +148,8 @@ function wireTimelineToolbar() {
   on('tool', () => { const b = $('btnRangeTool'); if (b) b.classList.toggle('active', getTool() === 'range'); });
   $('btnAddTelop').onclick = () => addTelopAtPlayhead();
   $('btnSelectAllTelops').onclick = () => { selectAllTelops(); toast('全テロップを選択しました（右で一括編集）'); };
-  $('btnAddVideoLayer').onclick = () => { addTrack('video'); toast('動画層を追加しました（PIP・重ね合成）'); };
-  $('btnAddTextLayer').onclick = () => { addTrack('text'); toast('テロップ層を追加しました'); };
-  $('btnAddImageLayer').onclick = () => { addTrack('overlay'); toast('画像(オーバーレイ)層を追加しました'); };
-  $('btnAddAudioLayer').onclick = () => { addTrack('audio'); toast('音声層を追加しました'); };
+  $('btnAddTrack').onclick = () => { addTrack('visual'); toast('トラックを追加しました（動画・画像・テロップを自由に配置できます）'); };
+  $('btnAddAudioLayer').onclick = () => { addTrack('audio'); toast('音声トラックを追加しました'); };
   $('btnZoomIn').onclick = zoomIn;
   $('btnZoomOut').onclick = zoomOut;
   $('btnZoomFit').onclick = zoomFit;

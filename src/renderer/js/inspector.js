@@ -81,8 +81,8 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('ボリューム', 0, 2, 0.05, clip.volume, (v) => { clip.volume = v; live(clip); }, pct, 'volume'));
   }
 
-  // 変形（画像、またはベース以外の動画＝PIP）：位置・サイズ
-  if (clip.kind === 'image' || (clip.kind === 'video' && !track.base)) {
+  // 変形（画像・動画＝ベース動画含む）：位置・サイズ
+  if (clip.kind === 'image' || clip.kind === 'video') {
     if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 };
     body.appendChild(el('div', { class: 'inspector-section-title', text: '位置・サイズ' }));
     body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, clip.transform.x, (v) => { clip.transform.x = v; live(clip); }, pct, 'tx'));
@@ -261,7 +261,7 @@ function renderBulkTextInspector() {
   body.appendChild(el('button', { class: 'danger-btn', style: 'margin-top:14px', onClick: () => {
     if (!confirm(`${clips.length}件のテロップをすべて削除しますか？`)) return;
     pushHistory();
-    for (const tr of getProject().tracks) { if (tr.kind === 'text') tr.clips = []; }
+    for (const tr of getProject().tracks) tr.clips = tr.clips.filter((c) => c.kind !== 'text');
     setSelection(null); noteDirty(); emit('project'); emit('selection');
   } }, ['全テロップを削除']));
 }

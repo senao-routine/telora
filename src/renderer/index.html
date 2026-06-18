@@ -16,6 +16,8 @@
         <span class="proj-name" id="projName">無題のプロジェクト</span>
       </div>
       <div class="topbar-actions">
+        <button class="btn" id="btnHome" title="ホームへ戻る"><span class="ico">🏠</span> ホーム</button>
+        <div class="sep"></div>
         <button class="btn" id="btnImport" title="動画・画像を読み込む (Ctrl/Cmd+I)"><span class="ico">⬇</span> 素材読込</button>
         <button class="btn" id="btnTranscribe" title="音声から文字起こししてテロップを自動生成"><span class="ico">🎙</span> 文字起こし</button>
         <button class="btn" id="btnImportSrt" title="SRT字幕を取り込む">SRT</button>
@@ -95,10 +97,8 @@
         <button class="tool-btn" id="btnAddTelop" title="テロップを追加 (Ctrl/Cmd+T)"><span class="ico">T</span> テロップ追加</button>
         <button class="tool-btn" id="btnSelectAllTelops" title="全テロップを選択して一括編集"><span class="ico">▦</span> 全テロップ選択</button>
         <div class="sep"></div>
-        <button class="tool-btn" id="btnAddVideoLayer" title="動画層を追加（PIP・重ね合成）">＋動画層</button>
-        <button class="tool-btn" id="btnAddTextLayer" title="テロップ層を追加">＋テロップ層</button>
-        <button class="tool-btn" id="btnAddImageLayer" title="画像(オーバーレイ)層を追加">＋画像層</button>
-        <button class="tool-btn" id="btnAddAudioLayer" title="音声層を追加">＋音声層</button>
+        <button class="tool-btn" id="btnAddTrack" title="トラックを追加（動画・画像・テロップを自由に配置できます）">＋トラック</button>
+        <button class="tool-btn" id="btnAddAudioLayer" title="音声トラックを追加">＋音声</button>
         <div class="spacer"></div>
         <div class="zoom-ctl">
           <button class="tool-btn" id="btnZoomOut" title="縮小">－</button>
@@ -131,6 +131,28 @@
   </div>
 
   <div class="toast" id="toast" hidden></div>
+
+  <!-- ホーム（スタート）画面 -->
+  <div id="homeScreen">
+    <div class="home-inner">
+      <div class="home-head">
+        <span class="home-logo">✦</span>
+        <div>
+          <h1 class="home-title">Telora</h1>
+          <p class="home-sub">テロップ＆カット動画エディタ</p>
+        </div>
+      </div>
+      <div class="home-actions">
+        <button class="home-btn primary" id="homeNew"><span class="hi">＋</span><span>新規プロジェクト</span></button>
+        <button class="home-btn" id="homeOpen"><span class="hi">📂</span><span>プロジェクトを開く</span></button>
+        <button class="home-btn" id="homeImport"><span class="hi">⬇</span><span>素材から始める</span></button>
+      </div>
+      <div class="home-recent">
+        <h2>最近のプロジェクト</h2>
+        <ul id="recentList" class="recent-list"></ul>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="js/error-collector.js"></script>
   <script type="module" src="js/app.js"></script>

@@ -2,7 +2,7 @@
 import {
   getProject, mutate, getPlayhead, getSelection, setSelection, findClip,
   clipDur, clipEnd, baseClipAtTime, defaultTextClip, getTracks, totalDuration,
-  MIN_CLIP,
+  slotFree, MIN_CLIP,
 } from './state.js';
 import { uid } from './util.js';
 import { findFreeSlot } from './media.js';
@@ -99,22 +99,26 @@ export function deleteSelection() {
   toast('削除しました');
 }
 
-// テロップ追加
+// テロップ追加：再生位置に置く。上半分(visual)の空いているトラックを上から探し、
+// 無ければ最上段に新しい visual トラックを自動追加する（他ソフト同様の柔軟レイヤ）。
 export function addTelopAtPlayhead() {
-  const textTrack = getTracks().find((t) => t.kind === 'text');
-  if (!textTrack) { toast('テロップトラックがありません', 'err'); return; }
-  const tp = defaultTextClip(getPlayhead());
-  let id = null;
-  mutate(() => {
-    const tr = getTracks().find((t) => t.kind === 'text');
-    tp.start = findFreeSlot(tr, getPlayhead(), tp.end - tp.start, null);
-    tp.end = tp.start + 3;
-    tr.clips.push(tp);
-    track_sort(tr);
-    id = tp.id;
+  const t = getPlayhead();
+  const dur = 3;
+  let id = null, trackId = null;
+  mutate((p) => {
+    const tp = defaultTextClip(t);
+    tp.start = t; tp.end = t + dur;
+    const visuals = p.tracks.filter((x) => x.kind === 'visual');
+    let track = visuals.find((tr) => slotFree(tr, t, dur));
+    if (!track) {
+      track = { id: uid('trk'), kind: 'visual', name: `V${visuals.length + 1}`, clips: [] };
+      p.tracks.unshift(track); // 最上段へ自動追加
+    }
+    track.clips.push(tp);
+    track_sort(track);
+    id = tp.id; trackId = track.id;
   });
-  const f = findClip(id);
-  if (f) setSelection({ trackId: f.track.id, clipId: id });
+  if (id) setSelection({ trackId, clipId: id });
   toast('テロップを追加しました');
   return id;
 }
@@ -155,9 +159,41 @@ function placeClone(srcClip, trackId, trackKind, atStart) {
   if (newId) { const f = findClip(newId); if (f) setSelection({ trackId: f.track.id, clipId: newId }); }
   return newId;
 }
+// 貼り付け：再生位置(カーソル)に置く。元と同じ位置（カーソル未移動）で重なる場合は
+// 1つ上のトラックへ繰り上げて配置する（無ければ最上段に新規トラックを自動作成）。他ソフト同様。
 export function pasteClipboard() {
   if (!clipboard) { toast('コピーされたクリップがありません', 'err'); return; }
-  if (placeClone(clipboard.clip, clipboard.trackId, clipboard.trackKind, getPlayhead())) toast('貼り付けました');
+  const c0 = clipboard.clip;
+  const start = Math.max(0, getPlayhead());
+  const dur = c0.kind === 'text' ? (c0.end - c0.start) : (c0.out - c0.in);
+  let newId = null, finalTrackId = null;
+  mutate((p) => {
+    const c = JSON.parse(JSON.stringify(c0));
+    c.id = uid(c.kind === 'text' ? 'text' : 'clip');
+    if (c.kind === 'text') { c.start = start; c.end = start + dur; } else c.start = start;
+
+    if (c.kind === 'audio') {
+      const audios = p.tracks.filter((t) => t.kind === 'audio');
+      const src = p.tracks.find((t) => t.id === clipboard.trackId && t.kind === 'audio');
+      let track = (src && slotFree(src, start, dur)) ? src : (audios.find((t) => slotFree(t, start, dur)) || null);
+      if (!track) { track = { id: uid('trk'), kind: 'audio', name: 'A' + (audios.length + 1), clips: [] }; p.tracks.push(track); }
+      track.clips.push(c); track.clips.sort((a, b) => a.start - b.start);
+      newId = c.id; finalTrackId = track.id;
+      return;
+    }
+    // 映像系：同位置が空いていれば元トラック、埋まっていれば1つ上の visual トラックへ
+    const src = p.tracks.find((t) => t.id === clipboard.trackId && t.kind === 'visual');
+    let track = (src && slotFree(src, start, dur)) ? src : null;
+    if (!track) {
+      const startIdx = src ? p.tracks.indexOf(src) : p.tracks.length;
+      for (let i = startIdx - 1; i >= 0; i--) { const t = p.tracks[i]; if (t.kind === 'visual' && slotFree(t, start, dur)) { track = t; break; } }
+    }
+    if (!track) { track = { id: uid('trk'), kind: 'visual', name: 'V' + (p.tracks.filter((t) => t.kind === 'visual').length + 1), clips: [] }; p.tracks.unshift(track); }
+    track.clips.push(c); track.clips.sort((a, b) => a.start - b.start);
+    newId = c.id; finalTrackId = track.id;
+  });
+  if (newId) setSelection({ trackId: finalTrackId, clipId: newId });
+  toast('貼り付けました');
 }
 export function duplicateSelection() {
   const sel = getSelection();

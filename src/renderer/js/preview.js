@@ -55,8 +55,8 @@ export function initPreview() {
     // 使われなくなった画像も破棄（VRAM リーク防止）
     const mids = new Set(getProject().media.map((m) => m.id));
     for (const id of [...imgCache.keys()]) if (!mids.has(id)) imgCache.delete(id);
-    // 削除された動画トラックの <video> も破棄
-    const vtrackIds = new Set(getProject().tracks.filter((tr) => tr.kind === 'video' && !tr.base).map((tr) => tr.id));
+    // 非ベース visual トラック以外の <video> は破棄（ベースは #previewVideo を使う）
+    const vtrackIds = new Set(getProject().tracks.filter((tr) => tr.kind === 'visual' && !tr.base).map((tr) => tr.id));
     for (const [id, el] of trackVideoEls) if (!vtrackIds.has(id)) { try { el.pause(); el.removeAttribute('src'); el.remove(); } catch (_) {} trackVideoEls.delete(id); }
     if (!isPlaying()) { syncBaseVideo(getPlayhead(), false); render(getPlayhead()); }
   });
@@ -165,7 +165,8 @@ function getTrackVideoEl(trackId) {
   let el = trackVideoEls.get(trackId);
   if (!el) {
     el = document.createElement('video');
-    el.muted = true; el.preload = 'auto'; el.playsInline = true;
+    // 非ベース動画も音声を鳴らす（2層目以降の動画の音声が無音にならないように）
+    el.muted = false; el.preload = 'auto'; el.playsInline = true;
     // DOM に接続しておくと一時停止中のシークでも確実にフレームをデコードする（非表示）
     el.style.cssText = 'position:absolute;left:-99999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
     (stage || document.body).appendChild(el);
@@ -176,12 +177,13 @@ function getTrackVideoEl(trackId) {
 function syncVideoTracks(t, shouldPlay) {
   const base = baseTrack();
   for (const track of getProject().tracks) {
-    if (track.kind !== 'video' || track === base) continue;
+    if (track.kind !== 'visual' || track === base) continue;
     const el = getTrackVideoEl(track.id);
     const c = clipAtTimeOnTrack(track, t);
     if (c && c.kind === 'video') {
       const m = mediaById(c.mediaId);
       if (m && el._mediaId !== m.id) { el._mediaId = m.id; el._pending = true; el.src = fileUrl(m.path); el.load(); }
+      el.volume = clamp(c.volume != null ? c.volume : 1, 0, 1);
       const desired = clamp(c.in + (t - c.start), 0, m ? m.duration : 1e9);
       if (el.readyState >= 1) {
         const tol = shouldPlay ? 0.12 : 0.04;
@@ -215,11 +217,32 @@ function drawTransformed(src, sw, sh, transform) {
   try { ctx.drawImage(src, tr.x * W - w / 2, tr.y * H - h / 2, w, h); } catch (_) {}
 }
 
+// drawTransformed と同じ式で「描画される矩形」を返す（当たり判定・選択枠用）
+function transformedBBox(sw, sh, transform) {
+  const W = canvas.width, H = canvas.height;
+  const mr = (sw || 16) / (sh || 9);
+  let bw = W, bh = W / mr;
+  if (bh > H) { bh = H; bw = H * mr; }
+  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
+  const w = bw * tr.scale, h = bh * tr.scale;
+  return { x: tr.x * W - w / 2, y: tr.y * H - h / 2, w, h };
+}
+// drawScaled（フィット・中央）と同じ式の矩形（ベース動画の選択用）
+function scaledBBox(sw, sh) {
+  const W = canvas.width, H = canvas.height;
+  const r = (sw || 16) / (sh || 9);
+  let dw = W, dh = W / r;
+  if (dh > H) { dh = H; dw = H * r; }
+  return { x: (W - dw) / 2, y: (H - dh) / 2, w: dw, h: dh };
+}
+
 // 戻り値: 'ok' | 'loading' | 'ffloading' | 'fferror' （診断表示用）
+// ベース動画も transform（位置・サイズ）を反映する。scale=1・中央なら全画面フィットと同じ。
 function drawVideoFrame(clip, t) {
+  const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
   // 通常パス：<video> が復号できていればそのフレームを描画
   if (video.videoWidth && video.videoHeight && video.readyState >= 2) {
-    drawScaled(video, video.videoWidth, video.videoHeight);
+    drawTransformed(video, video.videoWidth, video.videoHeight, tr);
     return 'ok';
   }
   // フォールバック：内蔵プレーヤーで映らない場合は FFmpeg で抽出したフレームを描画
@@ -230,8 +253,8 @@ function drawVideoFrame(clip, t) {
   if (!failed) return elapsed > 300 ? 'loading' : null; // 読み込み中（短時間ならメッセージ抑制）
   const srcT = clip.in + (t - clip.start);
   const img = getFfFrame(m, srcT);
-  if (img) { drawScaled(img, img.naturalWidth, img.naturalHeight); ffLastImg = img; return 'ok'; }
-  if (ffLastImg && ffLastImg.naturalWidth) { drawScaled(ffLastImg, ffLastImg.naturalWidth, ffLastImg.naturalHeight); return 'ok'; }
+  if (img) { drawTransformed(img, img.naturalWidth, img.naturalHeight, tr); ffLastImg = img; return 'ok'; }
+  if (ffLastImg && ffLastImg.naturalWidth) { drawTransformed(ffLastImg, ffLastImg.naturalWidth, ffLastImg.naturalHeight, tr); return 'ok'; }
   return ffError ? 'fferror' : 'ffloading';
 }
 
@@ -316,30 +339,40 @@ export function render(t) {
   showEmpty(!hasAny);
   let baseStatus = null;
 
+  // 下から上へ各 visual トラックを合成。トラックは種別に縛られず、
+  // クリップの kind（video/image/text）ごとに描画する。
   for (const track of tracksBottomToTop()) {
-    if (track.kind === 'text') {
-      for (const c of track.clips) {
-        if (t >= c.start - 1e-6 && t < clipEnd(c) + 1e-6) {
-          // 当たり判定用は素の bbox を別途取得（アニメ変形前）
-          const bbox = drawTextClipAnimated(c, t) || measureTelop(c);
-          hitBoxes.push({ clip: c, trackId: track.id, bbox });
+    if (track.kind !== 'visual') continue; // audio は描画対象外
+    const isBase = !!track.base;
+    for (const c of track.clips) {
+      if (t < c.start - 1e-6 || t >= clipEnd(c) + 1e-6) continue;
+      if (c.kind === 'text') {
+        // 当たり判定用は素の bbox を別途取得（アニメ変形前）
+        const bbox = drawTextClipAnimated(c, t) || measureTelop(c);
+        hitBoxes.push({ clip: c, trackId: track.id, bbox, kind: 'text', isBase });
+      } else if (c.kind === 'image') {
+        drawMediaClip(c);
+        const img = imgCache.get(c.mediaId);
+        if (img && img.complete && img.naturalWidth) {
+          hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(img.naturalWidth, img.naturalHeight, c.transform), kind: 'image', isBase });
         }
-      }
-    } else if (track.base) {
-      const c = clipAtTimeOnTrack(track, t);
-      if (c) { if (c.kind === 'video') baseStatus = drawVideoFrame(c, t); else drawMediaClip(c); }
-    } else {
-      // 非ベース：画像はそのまま、動画はトラック専用 <video> のフレームを transform 付きで描画
-      const c = clipAtTimeOnTrack(track, t);
-      if (c && c.kind === 'image') drawMediaClip(c);
-      else if (c && c.kind === 'video') {
-        const el = getTrackVideoEl(track.id);
-        if (el.videoWidth && el.readyState >= 2) drawTransformed(el, el.videoWidth, el.videoHeight, c.transform);
+      } else if (c.kind === 'video') {
+        if (isBase) {
+          baseStatus = drawVideoFrame(c, t); // ベースは #previewVideo（音声・コーデックフォールバック）
+          const bb = (video.videoWidth && video.videoHeight)
+            ? transformedBBox(video.videoWidth, video.videoHeight, c.transform)
+            : { x: 0, y: 0, w: canvas.width, h: canvas.height };
+          hitBoxes.push({ clip: c, trackId: track.id, bbox: bb, kind: 'video', isBase: true });
+        } else {
+          const el = getTrackVideoEl(track.id);
+          if (el.videoWidth && el.readyState >= 2) drawTransformed(el, el.videoWidth, el.videoHeight, c.transform);
+          hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(el.videoWidth, el.videoHeight, c.transform), kind: 'video', isBase: false });
+        }
       }
     }
   }
 
-  // 選択枠
+  // 選択枠＋四隅のリサイズハンドル
   const sel = getSelection();
   if (sel) {
     const hit = hitBoxes.find((h) => h.clip.id === sel.clipId);
@@ -348,10 +381,34 @@ export function render(t) {
       ctx.strokeStyle = '#5b8cff'; ctx.setLineDash([8, 6]); ctx.lineWidth = Math.max(2, H * 0.004);
       ctx.strokeRect(hit.bbox.x, hit.bbox.y, hit.bbox.w, hit.bbox.h);
       ctx.restore();
+      if (isDraggable(hit)) drawHandles(hit.bbox); // 大きさ変更用の丸ハンドル
     }
   }
   updateStatus(baseStatus);
   updateReadout(t);
+}
+
+// 四隅の丸ハンドル（リサイズ用）を描画
+function handleRadius() { return Math.max(5, Math.min(canvas.width, canvas.height) * 0.013); }
+function bboxCorners(b) { return [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]; }
+function drawHandles(b) {
+  const r = handleRadius();
+  ctx.save();
+  for (const [cx, cy] of bboxCorners(b)) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.lineWidth = Math.max(1.5, r * 0.35); ctx.strokeStyle = '#5b8cff'; ctx.stroke();
+  }
+  ctx.restore();
+}
+// 指定点が選択クリップの四隅ハンドル上か（リサイズ開始判定）
+function cornerAt(b, p) {
+  const tol = handleRadius() * 1.8;
+  const corners = bboxCorners(b);
+  for (let i = 0; i < corners.length; i++) {
+    if (Math.hypot(p.x - corners[i][0], p.y - corners[i][1]) <= tol) return i;
+  }
+  return null;
 }
 export { render as drawComposite };
 
@@ -437,28 +494,90 @@ function clientToFrame(e) {
   const rect = canvas.getBoundingClientRect();
   return { x: (e.clientX - rect.left) / rect.width * canvas.width, y: (e.clientY - rect.top) / rect.height * canvas.height };
 }
-function onPointerDown(e) {
-  const p = clientToFrame(e);
-  let hit = null;
+// クリップの中心位置（正規化）。テロップは x,y、画像・動画は transform.x,y。
+function clipPos(clip) {
+  if (clip.kind === 'text') return { x: clip.x, y: clip.y };
+  const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
+  return { x: tr.x, y: tr.y };
+}
+function setClipPos(clip, x, y) {
+  if (clip.kind === 'text') { clip.x = x; clip.y = y; }
+  else { if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 }; clip.transform.x = x; clip.transform.y = y; }
+}
+// ドラッグで位置・サイズを変えられるか（テロップ・画像・動画＝ベース含む）
+function isDraggable(hit) { return hit && (hit.kind === 'text' || hit.kind === 'image' || hit.kind === 'video'); }
+// 指定座標で最前面（配列末尾＝上の層）のクリップを返す
+function hitAt(p) {
   for (let i = hitBoxes.length - 1; i >= 0; i--) {
     const b = hitBoxes[i].bbox;
-    if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { hit = hitBoxes[i]; break; }
+    if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return hitBoxes[i];
   }
+  return null;
+}
+
+function onPointerDown(e) {
+  const p = clientToFrame(e);
+  // 1) 選択中クリップの四隅ハンドル → リサイズ開始
+  const sel = getSelection();
+  if (sel) {
+    const selHit = hitBoxes.find((h) => h.clip.id === sel.clipId);
+    if (selHit && isDraggable(selHit) && cornerAt(selHit.bbox, p) != null) {
+      e.preventDefault();
+      const b = selHit.bbox;
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const clip = selHit.clip;
+      dragState = {
+        mode: 'resize', clip, historyPushed: false, cx, cy,
+        d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)),
+        origScale: clip.kind === 'text' ? null : ((clip.transform && clip.transform.scale) || 1),
+        origSize: clip.kind === 'text' ? clip.size : null,
+      };
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+  }
+  // 2) 通常ヒット（選択＋移動）。上の層が優先（hitBoxes は下→上の順で push）
+  const hit = hitAt(p);
   if (!hit) return;
   e.preventDefault();
   setSelection({ trackId: hit.trackId, clipId: hit.clip.id });
+  if (!isDraggable(hit)) return; // ベース動画などは選択のみ
   // オフセットは正規化座標で保持（途中で解像度が変わってもズレない）
-  dragState = { clip: hit.clip, historyPushed: false, offNX: p.x / canvas.width - hit.clip.x, offNY: p.y / canvas.height - hit.clip.y };
-  canvas.setPointerCapture(e.pointerId);
+  const c = clipPos(hit.clip);
+  dragState = { mode: 'move', clip: hit.clip, historyPushed: false, offNX: p.x / canvas.width - c.x, offNY: p.y / canvas.height - c.y };
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
 }
 function onPointerMove(e) {
-  if (!dragState) return;
+  if (!dragState) {
+    // ホバー時のカーソル：四隅ハンドル上は resize、クリップ本体上は move
+    if (canvas) {
+      const p = clientToFrame(e);
+      let cursor = 'default';
+      const sel = getSelection();
+      if (sel) { const sh = hitBoxes.find((h) => h.clip.id === sel.clipId); if (sh && isDraggable(sh) && cornerAt(sh.bbox, p) != null) cursor = 'nwse-resize'; }
+      if (cursor === 'default' && isDraggable(hitAt(p))) cursor = 'move';
+      canvas.style.cursor = cursor;
+    }
+    return;
+  }
   if (!dragState.historyPushed) { pushHistory(); dragState.historyPushed = true; }
   const p = clientToFrame(e);
-  dragState.clip.x = clamp(p.x / canvas.width - dragState.offNX, 0, 1);
-  dragState.clip.y = clamp(p.y / canvas.height - dragState.offNY, 0, 1);
+  if (dragState.mode === 'resize') {
+    // 中心からの距離比でサイズを変える（テロップ=文字サイズ, 動画/画像=拡大率）
+    const ratio = Math.hypot(p.x - dragState.cx, p.y - dragState.cy) / dragState.d0;
+    if (dragState.clip.kind === 'text') {
+      dragState.clip.size = clamp(dragState.origSize * ratio, 0.02, 0.5);
+    } else {
+      if (!dragState.clip.transform) dragState.clip.transform = { x: 0.5, y: 0.5, scale: 1 };
+      dragState.clip.transform.scale = clamp(dragState.origScale * ratio, 0.05, 4);
+    }
+  } else {
+    const nx = clamp(p.x / canvas.width - dragState.offNX, 0, 1);
+    const ny = clamp(p.y / canvas.height - dragState.offNY, 0, 1);
+    setClipPos(dragState.clip, nx, ny);
+  }
   noteDirty();
   render(getPlayhead());
-  emit('telop-live', dragState.clip.id);
+  emit('telop-live', dragState.clip.id); // プレビュー再描画＋インスペクタのスライダー同期
 }
 function onPointerUp() { if (dragState) dragState = null; }

@@ -1,5 +1,6 @@
 // SRT / WebVTT 字幕の取り込み → テロップ（テキスト）クリップ化
-import { getTracks, mutate, defaultTextClip, findClip, setSelection } from './state.js';
+import { mutate, defaultTextClip, setSelection } from './state.js';
+import { uid } from './util.js';
 import { toast } from './ui.js';
 
 // "HH:MM:SS,mmm" / "MM:SS.mmm" などを秒へ
@@ -48,22 +49,23 @@ export async function importSrtFromFile() {
 export function importSrtText(text) {
   const cues = parseSrt(text);
   if (cues.length === 0) { toast('字幕が見つかりませんでした', 'err'); return; }
-  const textTrack = getTracks().find((t) => t.kind === 'text');
-  if (!textTrack) { toast('テロップトラックがありません', 'err'); return; }
 
-  let lastId = null;
-  mutate(() => {
-    const tr = getTracks().find((t) => t.kind === 'text');
+  // 字幕は専用の visual トラックを最上段に作ってまとめて配置する
+  let lastId = null, trackId = null;
+  mutate((p) => {
+    const track = { id: uid('trk'), kind: 'visual', name: '字幕', clips: [] };
+    p.tracks.unshift(track);
     for (const cue of cues) {
       const clip = defaultTextClip(cue.start);
       clip.start = cue.start;
       clip.end = cue.end;
       clip.text = cue.text;
-      tr.clips.push(clip);
+      track.clips.push(clip);
       lastId = clip.id;
     }
-    tr.clips.sort((a, b) => a.start - b.start);
+    track.clips.sort((a, b) => a.start - b.start);
+    trackId = track.id;
   });
-  if (lastId) { const f = findClip(lastId); if (f) setSelection({ trackId: f.track.id, clipId: lastId }); }
+  if (lastId) setSelection({ trackId, clipId: lastId });
   toast(`${cues.length} 件のテロップを取り込みました`, 'ok');
 }
