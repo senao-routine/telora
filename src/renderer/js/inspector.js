@@ -108,6 +108,15 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('右', 0, 0.45, 0.01, tr.crop.r, (v) => { tr.crop.r = v; live(clip); }, pct, 'crR'));
     body.appendChild(rangeField('上', 0, 0.45, 0.01, tr.crop.t, (v) => { tr.crop.t = v; live(clip); }, pct, 'crT'));
     body.appendChild(rangeField('下', 0, 0.45, 0.01, tr.crop.b, (v) => { tr.crop.b = v; live(clip); }, pct, 'crB'));
+    // クロマキー（グリーンバック等の背景透過）
+    if (!tr.chroma) tr.chroma = { on: false, key: '#00ff00', similarity: 0.3, blend: 0.1 };
+    const ch = tr.chroma;
+    body.appendChild(el('div', { class: 'inspector-section-title', text: 'クロマキー（背景透過）' }));
+    const chChk = checkbox(ch.on, (v) => { ch.on = v; live(clip); emit('project'); });
+    body.appendChild(el('label', { class: 'toggle-row' }, [chChk, '有効にする']));
+    body.appendChild(field('キー色', colorInput(ch.key || '#00ff00', (v) => { ch.key = v; live(clip); })));
+    body.appendChild(rangeField('類似度', 0.01, 0.8, 0.01, ch.similarity != null ? ch.similarity : 0.3, (v) => { ch.similarity = v; live(clip); }, pct, 'chSim'));
+    body.appendChild(rangeField('境界ブレンド', 0, 0.5, 0.01, ch.blend != null ? ch.blend : 0.1, (v) => { ch.blend = v; live(clip); }, pct, 'chBlend'));
   }
 
   // フェード（映像・音声共通）
@@ -320,6 +329,7 @@ function syncFields() {
       setRange(fieldRefs.crL, c.transform.crop.l || 0, pct); setRange(fieldRefs.crR, c.transform.crop.r || 0, pct);
       setRange(fieldRefs.crT, c.transform.crop.t || 0, pct); setRange(fieldRefs.crB, c.transform.crop.b || 0, pct);
     }
+    if (c.transform.chroma) { setRange(fieldRefs.chSim, c.transform.chroma.similarity != null ? c.transform.chroma.similarity : 0.3, pct); setRange(fieldRefs.chBlend, c.transform.chroma.blend != null ? c.transform.chroma.blend : 0.1, pct); }
   }
   if (c.kind === 'text' && fieldRefs.topacity) setRange(fieldRefs.topacity, c.opacity != null ? c.opacity : 1, pct);
   if (fieldRefs.fadeIn) setRange(fieldRefs.fadeIn, c.fadeIn || 0, (v) => v.toFixed(1) + 's');

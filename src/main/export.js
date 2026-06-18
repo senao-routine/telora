@@ -219,6 +219,14 @@ async function exportTimeline(payload, onProgress, registerProc) {
       parts.push(`atempo=${r.toFixed(4)}`);
       return ',' + parts.join(',');
     };
+    // クロマキー：キー色を透過（先頭カンマ込み。無ければ空）
+    const chromaFilter = (chroma) => {
+      if (!chroma || !chroma.on) return '';
+      const hex = (chroma.key || '#00ff00').replace('#', '');
+      const sim = (chroma.similarity != null ? chroma.similarity : 0.3).toFixed(3);
+      const bl = (chroma.blend != null ? chroma.blend : 0.1).toFixed(3);
+      return `,colorkey=0x${hex}:${sim}:${bl}`;
+    };
     // クロップ（各辺 0..1）を scale 前に適用するフィルタ接頭辞（末尾カンマ込み。無ければ空）
     const cropPrefix = (crop) => {
       if (!crop) return '';
@@ -264,6 +272,8 @@ async function exportTimeline(payload, onProgress, registerProc) {
       const brot = (seg.clip && seg.clip.rotation) || 0;
       const baaF = bop < 1 ? `,colorchannelmixer=aa=${bop.toFixed(3)}` : '';
       const bcropF = cropPrefix(seg.clip && seg.clip.crop);
+      const bchromaF = chromaFilter(seg.clip && seg.clip.chroma);
+      const bUseOverlay = !!brot || !!(seg.clip && seg.clip.chroma && seg.clip.chroma.on); // yuva合成経路
       const bsp = (seg.clip && seg.clip.speed) || 1; // 速度
       // フェードイン/アウト（ベース映像は黒へフェード、音声は afade）
       const fi = (seg.clip && seg.clip.fadeIn) || 0, fo = (seg.clip && seg.clip.fadeOut) || 0;
@@ -273,13 +283,13 @@ async function exportTimeline(payload, onProgress, registerProc) {
       let afadeF = '';
       if (fi > 0) afadeF += `,afade=t=in:st=0:d=${fi.toFixed(3)}`;
       if (fo > 0) afadeF += `,afade=t=out:st=${Math.max(0, dur - fo).toFixed(3)}:d=${fo.toFixed(3)}`;
-      // 回転ありのベースクリップを「黒背景へクリップ中心まわりに回転 overlay」で [v${i}] にする
-      const buildRotatedBase = (preLabel) => {
-        const rad = (brot * Math.PI / 180).toFixed(5);
+      // ベースクリップを「黒背景へ（必要なら回転して）overlay」で [v${i}] にする（回転/クロマ用）
+      const buildBaseOverlay = (preLabel) => {
         const c = seg.clip; const cx = c.x + c.pw / 2, cy = c.y + c.ph / 2;
-        filterParts.push(`[${preLabel}]rotate=${rad}:c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)[roB${i}]`);
+        let rl = preLabel;
+        if (brot) { const rad = (brot * Math.PI / 180).toFixed(5); filterParts.push(`[${preLabel}]rotate=${rad}:c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)[roB${i}]`); rl = `roB${i}`; }
         filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[bkB${i}]`);
-        filterParts.push(`[bkB${i}][roB${i}]overlay=x=${cx}-overlay_w/2:y=${cy}-overlay_h/2,${VFMT}${vfade}[v${i}]`);
+        filterParts.push(`[bkB${i}][${rl}]overlay=x=${cx}-overlay_w/2:y=${cy}-overlay_h/2,${VFMT}${vfade}[v${i}]`);
       };
       if (seg.type === 'black') {
         filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},${VFMT}[v${i}]`);
@@ -287,9 +297,9 @@ async function exportTimeline(payload, onProgress, registerProc) {
       } else if (seg.type === 'image') {
         const idx = inputIndex++;
         inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', seg.clip.path);
-        if (brot) {
-          filterParts.push(`[${idx}:v]${bcropF}scale=${seg.clip.pw}:${seg.clip.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${baaF}[scB${i}]`);
-          buildRotatedBase(`scB${i}`);
+        if (bUseOverlay) {
+          filterParts.push(`[${idx}:v]${bcropF}scale=${seg.clip.pw}:${seg.clip.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${bchromaF}${baaF}[scB${i}]`);
+          buildBaseOverlay(`scB${i}`);
         } else {
           filterParts.push(`[${idx}:v]${bcropF}${place}${opF},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}${vfade}[v${i}]`);
         }
@@ -299,9 +309,9 @@ async function exportTimeline(payload, onProgress, registerProc) {
         const inPt = seg.in != null ? seg.in : c.in; // 重なりスキップ後の実イン点
         const idx = inputIndex++;
         inputArgs.push('-i', c.path);
-        if (brot) {
-          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(bsp)},${bcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${baaF}[scB${i}]`);
-          buildRotatedBase(`scB${i}`);
+        if (bUseOverlay) {
+          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(bsp)},${bcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${bchromaF}${baaF}[scB${i}]`);
+          buildBaseOverlay(`scB${i}`);
         } else {
           filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(bsp)},${bcropF}${place}${opF},${VFMT}${vfade}[v${i}]`);
         }
@@ -373,14 +383,15 @@ async function exportTimeline(payload, onProgress, registerProc) {
             let lfade = '';
             if (lfi > 0) lfade += `,fade=t=in:st=0:d=${lfi.toFixed(3)}:alpha=1`;
             if (lfo > 0) lfade += `,fade=t=out:st=${Math.max(0, dur - lfo).toFixed(3)}:d=${lfo.toFixed(3)}:alpha=1`;
-            // スケール済み yuva クリップを作る共通部分
+            const chromaF = chromaFilter(c.chroma);
+            // スケール済み yuva クリップを作る共通部分（クロマキー→不透明度→フェード）
             const sc = `sc${lab}`;
             if (c.type === 'image') {
               inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', c.path);
-              filterParts.push(`[${idx}:v]${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
+              filterParts.push(`[${idx}:v]${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${chromaF}${aaF}${lfade}[${sc}]`);
             } else {
               inputArgs.push('-i', c.path);
-              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(c.speed || 1)},${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${aaF}${lfade}[${sc}]`);
+              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(c.speed || 1)},${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${chromaF}${aaF}${lfade}[${sc}]`);
             }
             if (rot) {
               // クリップ中心(cx,cy)まわりに回転し、透明な全画面へ overlay（中心を保ったまま配置）

@@ -71,7 +71,8 @@ export async function runExport() {
       const op = (c.transform && c.transform.opacity != null) ? c.transform.opacity : 1;
       const rotation = (c.transform && c.transform.rotation) || 0;
       const crop = (c.transform && c.transform.crop) || null;
-      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, opacity: op, rotation, crop, speed: c.speed || 1, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0, ...rect });
+      const chroma = (c.transform && c.transform.chroma) || null;
+      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, opacity: op, rotation, crop, chroma, speed: c.speed || 1, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0, ...rect });
     }
   }
 
@@ -116,7 +117,8 @@ export async function runExport() {
         const op = (clip.transform && clip.transform.opacity != null) ? clip.transform.opacity : 1;
         const rotation = (clip.transform && clip.transform.rotation) || 0;
         const crop = (clip.transform && clip.transform.crop) || null;
-        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y, opacity: op, rotation, crop, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+        const chroma = (clip.transform && clip.transform.chroma) || null;
+        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y, opacity: op, rotation, crop, chroma, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
         // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ）
         if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       }

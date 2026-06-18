@@ -234,8 +234,32 @@ function drawTransformed(src, sw, sh, transform) {
   ctx.save();
   if (op < 1) ctx.globalAlpha *= op;
   if (rot) { ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(-cx, -cy); }
-  try { ctx.drawImage(src, cr.sx, cr.sy, cr.cw, cr.ch, cx - w / 2, cy - h / 2, w, h); } catch (_) {}
+  const chroma = tr.chroma;
+  if (chroma && chroma.on) {
+    // クロマキー：描画先サイズのオフスクリーンへ描いてキー色を透過
+    const dw = Math.max(1, Math.round(Math.abs(w))), dh = Math.max(1, Math.round(Math.abs(h)));
+    const tmp = getChromaCanvas(dw, dh); const tctx = tmp.getContext('2d');
+    tctx.clearRect(0, 0, dw, dh);
+    try { tctx.drawImage(src, cr.sx, cr.sy, cr.cw, cr.ch, 0, 0, dw, dh); keyOut(tctx, dw, dh, chroma); ctx.drawImage(tmp, cx - w / 2, cy - h / 2, w, h); } catch (_) {}
+  } else {
+    try { ctx.drawImage(src, cr.sx, cr.sy, cr.cw, cr.ch, cx - w / 2, cy - h / 2, w, h); } catch (_) {}
+  }
   ctx.restore();
+}
+
+// クロマキー用オフスクリーンとキー処理
+let _chromaCv = null;
+function getChromaCanvas(w, h) { if (!_chromaCv) _chromaCv = document.createElement('canvas'); if (_chromaCv.width !== w) _chromaCv.width = w; if (_chromaCv.height !== h) _chromaCv.height = h; return _chromaCv; }
+function hexToRgb(hex) { const h = (hex || '#00ff00').replace('#', ''); return { r: parseInt(h.slice(0, 2), 16) || 0, g: parseInt(h.slice(2, 4), 16) || 0, b: parseInt(h.slice(4, 6), 16) || 0 }; }
+function keyOut(tctx, w, h, chroma) {
+  const k = hexToRgb(chroma.key || '#00ff00');
+  const sim = (chroma.similarity != null ? chroma.similarity : 0.3) * 441; // 最大色距離 sqrt(3*255^2)
+  const img = tctx.getImageData(0, 0, w, h); const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const dist = Math.sqrt((d[i] - k.r) ** 2 + (d[i + 1] - k.g) ** 2 + (d[i + 2] - k.b) ** 2);
+    if (dist < sim) d[i + 3] = 0;
+  }
+  tctx.putImageData(img, 0, 0);
 }
 
 // drawTransformed と同じ式で「描画される矩形」を返す（当たり判定・選択枠用）
