@@ -208,6 +208,13 @@ async function exportTimeline(payload, onProgress, registerProc) {
     const SCALE_PAD = `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
     const AFMT = 'aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo';
     const SILENCE = (d) => `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=0:${d.toFixed(3)},asetpts=PTS-STARTPTS,${AFMT}`;
+    // クロップ（各辺 0..1）を scale 前に適用するフィルタ接頭辞（末尾カンマ込み。無ければ空）
+    const cropPrefix = (crop) => {
+      if (!crop) return '';
+      const l = crop.l || 0, t = crop.t || 0, r = crop.r || 0, b = crop.b || 0;
+      if (!(l || t || r || b)) return '';
+      return `crop=in_w*${(1 - l - r).toFixed(4)}:in_h*${(1 - t - b).toFixed(4)}:in_w*${l.toFixed(4)}:in_h*${t.toFixed(4)},`;
+    };
 
     // ベースは「タイムライン順のセグメントを連結」して構築する。隙間は黒＋無音で埋め、
     // すべて pts 0 始まりにして overlay の framesync 問題を回避する。
@@ -238,20 +245,44 @@ async function exportTimeline(payload, onProgress, registerProc) {
       const place = (seg.clip && seg.clip.pw)
         ? `scale=${seg.clip.pw}:${seg.clip.ph},pad=${W}:${H}:${seg.clip.x}:${seg.clip.y}:color=black,setsar=1`
         : SCALE_PAD;
+      // 不透明度（ベースは黒背景なので RGB を op 倍＝黒へブレンドと等価。回転時はアルファ op 倍）
+      const bop = (seg.clip && seg.clip.opacity != null) ? seg.clip.opacity : 1;
+      const opF = bop < 1 ? `,colorchannelmixer=rr=${bop.toFixed(3)}:gg=${bop.toFixed(3)}:bb=${bop.toFixed(3)}` : '';
+      const brot = (seg.clip && seg.clip.rotation) || 0;
+      const baaF = bop < 1 ? `,colorchannelmixer=aa=${bop.toFixed(3)}` : '';
+      const bcropF = cropPrefix(seg.clip && seg.clip.crop);
+      // 回転ありのベースクリップを「黒背景へクリップ中心まわりに回転 overlay」で [v${i}] にする
+      const buildRotatedBase = (preLabel) => {
+        const rad = (brot * Math.PI / 180).toFixed(5);
+        const c = seg.clip; const cx = c.x + c.pw / 2, cy = c.y + c.ph / 2;
+        filterParts.push(`[${preLabel}]rotate=${rad}:c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)[roB${i}]`);
+        filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[bkB${i}]`);
+        filterParts.push(`[bkB${i}][roB${i}]overlay=x=${cx}-overlay_w/2:y=${cy}-overlay_h/2,${VFMT}[v${i}]`);
+      };
       if (seg.type === 'black') {
         filterParts.push(`color=c=black:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},${VFMT}[v${i}]`);
         filterParts.push(`${SILENCE(dur)}[a${i}]`);
       } else if (seg.type === 'image') {
         const idx = inputIndex++;
         inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', seg.clip.path);
-        filterParts.push(`[${idx}:v]${place},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}[v${i}]`);
+        if (brot) {
+          filterParts.push(`[${idx}:v]${bcropF}scale=${seg.clip.pw}:${seg.clip.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${baaF}[scB${i}]`);
+          buildRotatedBase(`scB${i}`);
+        } else {
+          filterParts.push(`[${idx}:v]${bcropF}${place}${opF},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,${VFMT}[v${i}]`);
+        }
         filterParts.push(`${SILENCE(dur)}[a${i}]`);
       } else {
         const c = seg.clip;
         const inPt = seg.in != null ? seg.in : c.in; // 重なりスキップ後の実イン点
         const idx = inputIndex++;
         inputArgs.push('-i', c.path);
-        filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${place},${VFMT}[v${i}]`);
+        if (brot) {
+          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${baaF}[scB${i}]`);
+          buildRotatedBase(`scB${i}`);
+        } else {
+          filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${bcropF}${place}${opF},${VFMT}[v${i}]`);
+        }
         // eslint-disable-next-line no-await-in-loop
         if (await sourceHasAudio(c.path)) {
           // 音声が映像より短い素材でも concat が破綻しないよう、セグメント尺まで無音パディング
@@ -308,12 +339,29 @@ async function exportTimeline(payload, onProgress, registerProc) {
           } else {
             const c = s.c; const idx = inputIndex++;
             const PAD = `pad=${W}:${H}:${c.x}:${c.y}:color=black@0.0`;
+            // 不透明度（透過レイヤなのでアルファを op 倍）
+            const lop = (c.opacity != null) ? c.opacity : 1;
+            const aaF = lop < 1 ? `,colorchannelmixer=aa=${lop.toFixed(3)}` : '';
+            const rot = c.rotation || 0;
+            const lcropF = cropPrefix(c.crop);
+            // スケール済み yuva クリップを作る共通部分
+            const sc = `sc${lab}`;
             if (c.type === 'image') {
               inputArgs.push('-loop', '1', '-t', dur.toFixed(3), '-i', c.path);
-              filterParts.push(`[${idx}:v]scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1,${PAD}[${lab}]`);
+              filterParts.push(`[${idx}:v]${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},trim=0:${dur.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,setsar=1${aaF}[${sc}]`);
             } else {
               inputArgs.push('-i', c.path);
-              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1,${PAD}[${lab}]`);
+              filterParts.push(`[${idx}:v]trim=start=${s.in.toFixed(3)}:end=${c.out.toFixed(3)},setpts=PTS-STARTPTS,${lcropF}scale=${c.pw}:${c.ph},fps=${FPS},format=yuva420p,setsar=1${aaF}[${sc}]`);
+            }
+            if (rot) {
+              // クリップ中心(cx,cy)まわりに回転し、透明な全画面へ overlay（中心を保ったまま配置）
+              const rad = (rot * Math.PI / 180).toFixed(5);
+              const cx = c.x + c.pw / 2, cy = c.y + c.ph / 2;
+              filterParts.push(`[${sc}]rotate=${rad}:c=black@0:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)[ro${lab}]`);
+              filterParts.push(`color=c=black@0.0:s=${W}x${H}:r=${FPS}:d=${dur.toFixed(3)},format=yuva420p,setsar=1[bl${lab}]`);
+              filterParts.push(`[bl${lab}][ro${lab}]overlay=x=${cx}-overlay_w/2:y=${cy}-overlay_h/2[${lab}]`);
+            } else {
+              filterParts.push(`[${sc}]${PAD}[${lab}]`);
             }
           }
           labels.push(`[${lab}]`);

@@ -205,25 +205,41 @@ function drawScaled(src, sw, sh) {
   try { ctx.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh); } catch (_) {}
 }
 
-// transform（中心x,y と scale）付きで描画（オーバーレイ動画・画像 共通）
+// クロップ（各辺を 0..1 で内側へ）から、ソースの可視矩形を返す
+function croppedSrc(sw, sh, crop) {
+  const c = crop || {}; const l = c.l || 0, t = c.t || 0, r = c.r || 0, b = c.b || 0;
+  return { sx: sw * l, sy: sh * t, cw: Math.max(1, sw * (1 - l - r)), ch: Math.max(1, sh * (1 - t - b)) };
+}
+
+// transform（中心x,y・scale・回転・不透明度・クロップ）付きで描画（動画・画像 共通）
 function drawTransformed(src, sw, sh, transform) {
   if (!sw || !sh) return;
   const W = canvas.width, H = canvas.height;
-  const mr = sw / sh;
+  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
+  const cr = croppedSrc(sw, sh, tr.crop);
+  const mr = cr.cw / cr.ch;
   let bw = W, bh = W / mr;
   if (bh > H) { bh = H; bw = H * mr; }
-  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
   const w = bw * tr.scale, h = bh * tr.scale;
-  try { ctx.drawImage(src, tr.x * W - w / 2, tr.y * H - h / 2, w, h); } catch (_) {}
+  const op = tr.opacity != null ? tr.opacity : 1;
+  if (op <= 0.001) return;
+  const cx = tr.x * W, cy = tr.y * H;
+  const rot = tr.rotation ? tr.rotation * Math.PI / 180 : 0;
+  ctx.save();
+  if (op < 1) ctx.globalAlpha *= op;
+  if (rot) { ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(-cx, -cy); }
+  try { ctx.drawImage(src, cr.sx, cr.sy, cr.cw, cr.ch, cx - w / 2, cy - h / 2, w, h); } catch (_) {}
+  ctx.restore();
 }
 
 // drawTransformed と同じ式で「描画される矩形」を返す（当たり判定・選択枠用）
 function transformedBBox(sw, sh, transform) {
   const W = canvas.width, H = canvas.height;
-  const mr = (sw || 16) / (sh || 9);
+  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
+  const cr = croppedSrc(sw || 16, sh || 9, tr.crop);
+  const mr = cr.cw / cr.ch;
   let bw = W, bh = W / mr;
   if (bh > H) { bh = H; bw = H * mr; }
-  const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
   const w = bw * tr.scale, h = bh * tr.scale;
   return { x: tr.x * W - w / 2, y: tr.y * H - h / 2, w, h };
 }
@@ -315,7 +331,7 @@ function drawTextClipAnimated(c, t) {
   if (a.alpha <= 0.01) return;
   const W = canvas.width, H = canvas.height;
   ctx.save();
-  ctx.globalAlpha *= a.alpha;
+  ctx.globalAlpha *= a.alpha * (c.opacity != null ? c.opacity : 1);
   if (a.dx || a.dy || a.scale !== 1) {
     const cx = c.x * W, cy = c.y * H;
     ctx.translate(cx + a.dx * W, cy + a.dy * H);

@@ -241,7 +241,7 @@ export function makeClipFromMedia(media, start = 0) {
     return {
       id: uid('clip'), kind: 'image', mediaId: media.id,
       in: 0, out: DEFAULT_IMAGE_DUR, start,
-      transform: { x: 0.5, y: 0.5, scale: 1 },
+      transform: { x: 0.5, y: 0.5, scale: 1, opacity: 1, rotation: 0 },
     };
   }
   if (media.type === 'audio') {
@@ -250,7 +250,7 @@ export function makeClipFromMedia(media, start = 0) {
   return {
     id: uid('clip'), kind: 'video', mediaId: media.id,
     in: 0, out: media.duration || 0, start,
-    transform: { x: 0.5, y: 0.5, scale: 1 },
+    transform: { x: 0.5, y: 0.5, scale: 1, opacity: 1, rotation: 0 },
   };
 }
 
@@ -273,6 +273,7 @@ export function defaultTextClip(start) {
     outline: true, outlineColor: '#000000', outlineWidth: 0.08,
     shadow: true,
     anim: 'none',
+    opacity: 1,
   };
 }
 

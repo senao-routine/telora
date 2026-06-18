@@ -81,13 +81,25 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('ボリューム', 0, 2, 0.05, clip.volume, (v) => { clip.volume = v; live(clip); }, pct, 'volume'));
   }
 
-  // 変形（画像・動画＝ベース動画含む）：位置・サイズ
+  // 変形（画像・動画＝ベース動画含む）：位置・サイズ・回転・不透明度
   if (clip.kind === 'image' || clip.kind === 'video') {
     if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 };
+    const tr = clip.transform;
+    if (tr.opacity == null) tr.opacity = 1;
+    if (tr.rotation == null) tr.rotation = 0;
     body.appendChild(el('div', { class: 'inspector-section-title', text: '位置・サイズ' }));
-    body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, clip.transform.x, (v) => { clip.transform.x = v; live(clip); }, pct, 'tx'));
-    body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, clip.transform.y, (v) => { clip.transform.y = v; live(clip); }, pct, 'ty'));
-    body.appendChild(rangeField('拡大率', 0.1, 2, 0.01, clip.transform.scale, (v) => { clip.transform.scale = v; live(clip); }, pct, 'tscale'));
+    body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, tr.x, (v) => { tr.x = v; live(clip); }, pct, 'tx'));
+    body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, tr.y, (v) => { tr.y = v; live(clip); }, pct, 'ty'));
+    body.appendChild(rangeField('拡大率', 0.1, 2, 0.01, tr.scale, (v) => { tr.scale = v; live(clip); }, pct, 'tscale'));
+    body.appendChild(rangeField('回転 (°)', -180, 180, 1, tr.rotation, (v) => { tr.rotation = v; live(clip); }, (v) => `${Math.round(v)}°`, 'trot'));
+    body.appendChild(rangeField('不透明度', 0, 1, 0.01, tr.opacity, (v) => { tr.opacity = v; live(clip); }, pct, 'topacity'));
+    // クロップ（各辺をトリミング）
+    if (!tr.crop) tr.crop = { l: 0, t: 0, r: 0, b: 0 };
+    body.appendChild(el('div', { class: 'inspector-section-title', text: 'クロップ（トリミング）' }));
+    body.appendChild(rangeField('左', 0, 0.45, 0.01, tr.crop.l, (v) => { tr.crop.l = v; live(clip); }, pct, 'crL'));
+    body.appendChild(rangeField('右', 0, 0.45, 0.01, tr.crop.r, (v) => { tr.crop.r = v; live(clip); }, pct, 'crR'));
+    body.appendChild(rangeField('上', 0, 0.45, 0.01, tr.crop.t, (v) => { tr.crop.t = v; live(clip); }, pct, 'crT'));
+    body.appendChild(rangeField('下', 0, 0.45, 0.01, tr.crop.b, (v) => { tr.crop.b = v; live(clip); }, pct, 'crB'));
   }
 
   // 操作
@@ -146,6 +158,8 @@ function renderTextInspector(tp) {
   body.appendChild(field('フォント', fontSel));
 
   body.appendChild(rangeField('文字サイズ', 0.03, 0.25, 0.005, tp.size, (v) => { tp.size = v; live(tp); }, pct, 'size'));
+  if (tp.opacity == null) tp.opacity = 1;
+  body.appendChild(rangeField('不透明度', 0, 1, 0.01, tp.opacity, (v) => { tp.opacity = v; live(tp); }, pct, 'topacity'));
 
   const boldBtn = styleToggle('B', tp.bold, () => { tp.bold = !tp.bold; live(tp); refreshToggle(boldBtn, tp.bold); });
   boldBtn.style.fontWeight = '800';
@@ -275,7 +289,16 @@ function syncFields() {
   const c = f.clip;
   setRange(fieldRefs.x, c.x, pct); setRange(fieldRefs.y, c.y, pct); setRange(fieldRefs.size, c.size, pct);
   setRange(fieldRefs.bgOpacity, c.bgOpacity, pct); setRange(fieldRefs.outlineWidth, c.outlineWidth, pct);
-  if (c.transform) { setRange(fieldRefs.tx, c.transform.x, pct); setRange(fieldRefs.ty, c.transform.y, pct); setRange(fieldRefs.tscale, c.transform.scale, pct); }
+  if (c.transform) {
+    setRange(fieldRefs.tx, c.transform.x, pct); setRange(fieldRefs.ty, c.transform.y, pct); setRange(fieldRefs.tscale, c.transform.scale, pct);
+    if (fieldRefs.trot) setRange(fieldRefs.trot, c.transform.rotation || 0, (v) => `${Math.round(v)}°`);
+    if (fieldRefs.topacity) setRange(fieldRefs.topacity, c.transform.opacity != null ? c.transform.opacity : 1, pct);
+    if (c.transform.crop) {
+      setRange(fieldRefs.crL, c.transform.crop.l || 0, pct); setRange(fieldRefs.crR, c.transform.crop.r || 0, pct);
+      setRange(fieldRefs.crT, c.transform.crop.t || 0, pct); setRange(fieldRefs.crB, c.transform.crop.b || 0, pct);
+    }
+  }
+  if (c.kind === 'text' && fieldRefs.topacity) setRange(fieldRefs.topacity, c.opacity != null ? c.opacity : 1, pct);
   if (fieldRefs.volume && isFinite(c.volume)) setRange(fieldRefs.volume, c.volume, pct);
   if (fieldRefs.start && document.activeElement !== fieldRefs.start) fieldRefs.start.value = (+c.start).toFixed(1);
   if (fieldRefs.dur && document.activeElement !== fieldRefs.dur) fieldRefs.dur.value = clipDur(c).toFixed(1);

@@ -17,12 +17,20 @@ function renderImageOverlayPng(clip, media, W, H) {
         const c = document.createElement('canvas');
         c.width = W; c.height = H;
         const ctx = c.getContext('2d');
-        const mr = img.naturalWidth / img.naturalHeight;
+        const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
+        const sw = img.naturalWidth, sh = img.naturalHeight;
+        const cc = tr.crop || {}; const cl = cc.l || 0, ct = cc.t || 0, cr2 = cc.r || 0, cb = cc.b || 0;
+        const sx = sw * cl, sy = sh * ct, csw = Math.max(1, sw * (1 - cl - cr2)), csh = Math.max(1, sh * (1 - ct - cb));
+        const mr = csw / csh;
         let bw = W, bh = W / mr;
         if (bh > H) { bh = H; bw = H * mr; }
-        const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
         const w = bw * tr.scale, h = bh * tr.scale;
-        ctx.drawImage(img, tr.x * W - w / 2, tr.y * H - h / 2, w, h);
+        const cx = tr.x * W, cy = tr.y * H;
+        const op = tr.opacity != null ? tr.opacity : 1;
+        const rot = tr.rotation ? tr.rotation * Math.PI / 180 : 0;
+        if (op < 1) ctx.globalAlpha = Math.max(0, op);
+        if (rot) { ctx.translate(cx, cy); ctx.rotate(rot); ctx.translate(-cx, -cy); }
+        ctx.drawImage(img, sx, sy, csw, csh, cx - w / 2, cy - h / 2, w, h);
         resolve(c.toDataURL('image/png'));
       } catch (_) { resolve(null); }
     };
@@ -33,9 +41,11 @@ function renderImageOverlayPng(clip, media, W, H) {
 
 // transform（中心x,y・拡大率scale）から配置矩形 pw/ph/x/y を算出（preview の drawTransformed と同式・偶数/画面内クランプ）
 function pipRect(m, transform, W, H) {
-  const mr = (m.width || 16) / (m.height || 9);
-  let bw = W, bh = W / mr; if (bh > H) { bh = H; bw = H * mr; }
   const tr = transform || { x: 0.5, y: 0.5, scale: 1 };
+  const cc = tr.crop || {}; const cl = cc.l || 0, ct = cc.t || 0, cr2 = cc.r || 0, cb = cc.b || 0;
+  const cw = (m.width || 16) * (1 - cl - cr2), ch = (m.height || 9) * (1 - ct - cb);
+  const mr = cw / ch;
+  let bw = W, bh = W / mr; if (bh > H) { bh = H; bw = H * mr; }
   let pw = Math.round(bw * tr.scale), ph = Math.round(bh * tr.scale);
   pw = Math.min(W, Math.max(2, pw - (pw % 2))); ph = Math.min(H, Math.max(2, ph - (ph % 2)));
   let x = Math.round(tr.x * W - pw / 2), y = Math.round(tr.y * H - ph / 2);
@@ -58,7 +68,10 @@ export async function runExport() {
       const m = mediaById(c.mediaId);
       if (!m || clipDur(c) <= 0.02) continue;
       const rect = pipRect(m, c.transform, W, H);
-      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, ...rect });
+      const op = (c.transform && c.transform.opacity != null) ? c.transform.opacity : 1;
+      const rotation = (c.transform && c.transform.rotation) || 0;
+      const crop = (c.transform && c.transform.crop) || null;
+      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, opacity: op, rotation, crop, ...rect });
     }
   }
 
@@ -89,7 +102,7 @@ export async function runExport() {
     for (const clip of track.clips) {
       if (clipDur(clip) <= 0) continue;
       if (clip.kind === 'text') {
-        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none' });
+        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H, clip.opacity != null ? clip.opacity : 1), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none' });
       } else if (clip.kind === 'image' && !isBase) {
         const m = mediaById(clip.mediaId);
         if (!m) continue;
@@ -100,7 +113,10 @@ export async function runExport() {
         const m = mediaById(clip.mediaId);
         if (!m || clipDur(clip) <= 0.02) continue;
         const { pw, ph, x, y } = pipRect(m, clip.transform, W, H);
-        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y });
+        const op = (clip.transform && clip.transform.opacity != null) ? clip.transform.opacity : 1;
+        const rotation = (clip.transform && clip.transform.rotation) || 0;
+        const crop = (clip.transform && clip.transform.crop) || null;
+        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y, opacity: op, rotation, crop });
         // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ）
         if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1 });
       }

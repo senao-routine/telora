@@ -132,11 +132,12 @@ export function drawTelopsAt(ctx, telops, t, frameW, frameH) {
  * 1 つのテロップを出力解像度のフルフレーム透過 PNG (dataURL) として描画する。
  * 書き出し時に FFmpeg の overlay 入力として使用。
  */
-export function renderTelopPng(telop, frameW, frameH) {
+export function renderTelopPng(telop, frameW, frameH, opacity = 1) {
   const canvas = document.createElement('canvas');
   canvas.width = frameW;
   canvas.height = frameH;
   const ctx = canvas.getContext('2d');
+  if (opacity < 1) ctx.globalAlpha = Math.max(0, opacity);
   drawTelop(ctx, telop, frameW, frameH);
   return canvas.toDataURL('image/png');
 }
