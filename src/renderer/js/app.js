@@ -5,7 +5,7 @@ import { initInspector } from './inspector.js';
 import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './media.js';
 import {
   splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, deleteSelectedRange,
-  copySelection, pasteClipboard, cutSelection, duplicateSelection,
+  copySelection, pasteClipboard, cutSelection, duplicateSelection, applyCrossfade,
 } from './edit.js';
 import { runExport } from './export-ui.js';
 import { saveProject, openProject, openProjectPath, getRecents, updateTitle } from './project-io.js';
@@ -158,6 +158,7 @@ function wireTimelineToolbar() {
   on('tool', () => { const b = $('btnRangeTool'); if (b) b.classList.toggle('active', getTool() === 'range'); });
   $('btnAddTelop').onclick = () => addTelopAtPlayhead();
   $('btnSelectAllTelops').onclick = () => { selectAllTelops(); toast('全テロップを選択しました（右で一括編集）'); };
+  $('btnCrossfade').onclick = () => applyCrossfade();
   $('btnAddTrack').onclick = () => { addTrack('visual'); toast('トラックを追加しました（動画・画像・テロップを自由に配置できます）'); };
   $('btnAddAudioLayer').onclick = () => { addTrack('audio'); toast('音声トラックを追加しました'); };
   $('btnMarker').onclick = () => { toggleMarkerAtPlayhead(); };

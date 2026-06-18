@@ -122,6 +122,43 @@ export function addTelopAtPlayhead() {
 
 function track_sort(tr) { tr.clips.sort((a, b) => a.start - b.start); }
 
+// トランジション（クロスフェード）：選択クリップを直前の隣接クリップへ重ねて溶け込ませる。
+// 映像はクリップを1つ上の visual トラックへ移し、duration ぶん前へずらして fadeIn（重なり区間で前のクリップにディゾルブ）。
+export function applyCrossfade(duration = 0.6) {
+  const sel = getSelection();
+  if (!sel || !sel.clipId) { toast('クリップを選択してください', 'err'); return; }
+  if (!findClip(sel.clipId)) return;
+  let ok = false;
+  mutate((p) => {
+    const cur = findClip(sel.clipId); if (!cur) return;
+    const tr = cur.track, c = cur.clip;
+    // 直前の隣接クリップ（同トラックで c の開始以前に終わるもののうち最後）
+    const prev = tr.clips.filter((x) => x.id !== c.id && clipEnd(x) <= c.start + 0.05).sort((a, b) => clipEnd(b) - clipEnd(a))[0];
+    if (!prev) { return; }
+    const d = Math.min(duration, clipDur(c) - 0.1, clipDur(prev) - 0.1);
+    if (d <= 0.05) return;
+    if (c.kind === 'audio') {
+      c.start = Math.max(0, c.start - d); c.fadeIn = d; // 音声は重ねて fadeIn＝クロスフェード
+    } else {
+      // 1つ上の visual トラックへ移動（無ければ最上段に作成）し、d 秒前へ重ねて fadeIn
+      const idx = p.tracks.indexOf(tr);
+      let up = null;
+      for (let i = idx - 1; i >= 0; i--) { if (p.tracks[i].kind === 'visual') { up = p.tracks[i]; break; } }
+      if (!up || !slotFree(up, c.start - d, clipDur(c) + d, c.id)) {
+        up = { id: uid('trk'), kind: 'visual', name: 'V' + (p.tracks.filter((t) => t.kind === 'visual').length + 1), clips: [] };
+        p.tracks.unshift(up);
+      }
+      const ci = tr.clips.indexOf(c); if (ci >= 0) tr.clips.splice(ci, 1);
+      c.start = Math.max(0, c.start - d); c.fadeIn = d;
+      up.clips.push(c); up.clips.sort((a, b) => a.start - b.start);
+      sel.trackId = up.id;
+    }
+    ok = true;
+  });
+  if (ok) { setSelection({ trackId: sel.trackId, clipId: sel.clipId }); toast('クロスフェードを適用しました'); }
+  else toast('直前に隣接クリップがありません（クロスフェード不可）', 'err');
+}
+
 // ---- コピー / 貼り付け / 複製（複数選択対応）----
 let clipboard = null; // { anchor, items:[{clip, trackId}] }
 export function copySelection() {
