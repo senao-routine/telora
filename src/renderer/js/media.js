@@ -5,6 +5,7 @@ import {
   makeClipFromMedia, mainTrackEnd, clipEnd, clipDur, getPlayhead,
 } from './state.js';
 import { toast } from './ui.js';
+import { ensureWaveform } from './waveform.js';
 
 const VIDEO_EXT = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'ts'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
@@ -154,6 +155,7 @@ export async function importMedia(paths, { addToTimeline = true } = {}) {
     }
 
     project.media.push(media);
+    if (media.type !== 'image') ensureWaveform(media); // 波形ピークを準備
     added.push(media);
     if (addToTimeline) addClipFromMedia(media.id, { silent: true });
   }

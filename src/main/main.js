@@ -219,6 +219,15 @@ ipcMain.handle('write-dataurl', async (_e, filePath, dataUrl) => {
   }
 });
 
+ipcMain.handle('read-file-buffer', async (_e, filePath) => {
+  try {
+    const buf = fs.readFileSync(filePath);
+    return { ok: true, base64: buf.toString('base64') };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+});
+
 ipcMain.handle('read-file', async (_e, filePath) => {
   try {
     const content = fs.readFileSync(filePath, 'utf8');

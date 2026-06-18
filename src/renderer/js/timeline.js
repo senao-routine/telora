@@ -7,6 +7,7 @@ import {
   getTool, getRange, setRange, getMarkers,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
+import { ensureWaveform, drawClipWaveform } from './waveform.js';
 import { seek } from './preview.js';
 
 const MIN_TEXT = 0.2;
@@ -40,6 +41,7 @@ export function initTimeline() {
   on('project', render);
   on('selection', renderSelectionOnly);
   on('zoom', render);
+  on('waveform', render);
   on('playhead', updatePlayhead);
   on('range', updateRangeBand);
   on('tool', updateToolCursor);
@@ -157,6 +159,13 @@ function renderClip(track, clip, P, sel) {
     const m = mediaById(clip.mediaId);
     const thumb = m ? getThumb(m.id) : null;
     if (thumb) children.push(el('div', { class: 'clip-thumb', style: `background-image:url(${thumb})` }));
+    // 音声クリップ：波形を背面に描画
+    if (clip.kind === 'audio' && m) {
+      ensureWaveform(m);
+      const wc = el('canvas', { class: 'clip-wave', width: Math.max(1, Math.round(width)), height: 40 });
+      drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(255,255,255,0.5)');
+      children.push(wc);
+    }
     children.push(el('div', { class: 'clip-dur', text: `${clipDur(clip).toFixed(1)}s` }));
     children.push(el('div', { class: 'clip-label', text: (clip.kind === 'audio' ? '🎵 ' : '') + (m ? m.name : '(欠落素材)') }));
     if (clip.kind === 'image') children.push(el('div', { class: 'clip-badge', text: 'IMG' }));
