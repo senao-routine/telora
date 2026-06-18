@@ -26,6 +26,7 @@ function freshProject() {
     settings: { width: 1280, height: 720, fps: 30 },
     media: [],   // { id, name, path, type:'video'|'image', duration, width, height, fps, hasAudio }
     tracks: freshTracks(),
+    markers: [], // タイムラインのマーカー [{ t }]
   };
 }
 
@@ -380,6 +381,17 @@ export function removeTrack(id) {
   emit('project');
   emit('selection');
   return true;
+}
+
+// ---- マーカー ----
+export function getMarkers() { return state.project.markers || (state.project.markers = []); }
+export function toggleMarkerAtPlayhead() {
+  pushHistory();
+  const t = state.ui.playhead;
+  const m = getMarkers();
+  const i = m.findIndex((x) => Math.abs(x.t - t) < 0.06);
+  if (i >= 0) m.splice(i, 1); else { m.push({ t }); m.sort((a, b) => a.t - b.t); }
+  markDirty(); emit('project');
 }
 
 // メイントラック末尾の時刻（順次追加用）

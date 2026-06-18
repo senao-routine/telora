@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   saveProjectDialog: (defaultName) => ipcRenderer.invoke('save-project-dialog', defaultName),
   openProjectDialog: () => ipcRenderer.invoke('open-project-dialog'),
   exportDialog: (defaultName) => ipcRenderer.invoke('export-dialog', defaultName),
+  saveFileDialog: (opts) => ipcRenderer.invoke('save-file-dialog', opts),
   openFileDialog: (opts) => ipcRenderer.invoke('open-file-dialog', opts),
 
   // ファイル入出力

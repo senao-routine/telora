@@ -1,7 +1,34 @@
 // SRT / WebVTT 字幕の取り込み → テロップ（テキスト）クリップ化
-import { mutate, defaultTextClip, setSelection } from './state.js';
+import { mutate, defaultTextClip, setSelection, getTextClips } from './state.js';
 import { uid } from './util.js';
 import { toast } from './ui.js';
+
+// 秒 → "HH:MM:SS,mmm"
+function fmtSrtTime(t) {
+  t = Math.max(0, t);
+  const ms = Math.round((t - Math.floor(t)) * 1000);
+  const s = Math.floor(t) % 60, m = Math.floor(t / 60) % 60, h = Math.floor(t / 3600);
+  const p = (n, l = 2) => String(n).padStart(l, '0');
+  return `${p(h)}:${p(m)}:${p(s)},${p(ms, 3)}`;
+}
+
+// テロップ配列 → SRT 文字列（純粋関数・テスト用にエクスポート）
+export function buildSrt(clips) {
+  const sorted = clips.slice().sort((a, b) => a.start - b.start);
+  return sorted.map((c, i) => `${i + 1}\n${fmtSrtTime(c.start)} --> ${fmtSrtTime(c.end)}\n${(c.text || '').trim()}`).join('\n\n') + '\n';
+}
+
+// テロップを SRT 字幕として書き出す
+export async function exportSrt() {
+  const clips = getTextClips();
+  if (!clips.length) { toast('書き出すテロップがありません', 'err'); return; }
+  const srt = buildSrt(clips);
+  const dlg = await window.api.saveFileDialog({ title: '字幕(SRT)を書き出す', defaultName: 'subtitle.srt', filters: [{ name: 'SRT 字幕', extensions: ['srt'] }] });
+  if (dlg.canceled || !dlg.filePath) return;
+  const res = await window.api.writeFile(dlg.filePath, srt);
+  if (res.ok) toast(`${clips.length} 件の字幕を書き出しました`, 'ok');
+  else toast('書き出しに失敗しました: ' + res.error, 'err');
+}
 
 // "HH:MM:SS,mmm" / "MM:SS.mmm" などを秒へ
 function parseTimestamp(s) {

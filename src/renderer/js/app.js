@@ -1,5 +1,5 @@
 // アプリ起動・全モジュールの結線
-import { initPreview, togglePlay, play, pause, seek } from './preview.js';
+import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides } from './preview.js';
 import { initTimeline, zoomIn, zoomOut, zoomFit, ensurePlayheadVisible } from './timeline.js';
 import { initInspector } from './inspector.js';
 import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './media.js';
@@ -9,13 +9,13 @@ import {
 } from './edit.js';
 import { runExport } from './export-ui.js';
 import { saveProject, openProject, openProjectPath, getRecents, updateTitle } from './project-io.js';
-import { importSrtFromFile } from './import-srt.js';
+import { importSrtFromFile, exportSrt } from './import-srt.js';
 import { importXmlFromFile } from './import-xml.js';
 import { runTranscribe } from './transcribe-ui.js';
 import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
-  getTool, setTool, toggleRangeTool,
+  getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -102,6 +102,7 @@ function wireTopbar() {
   $('btnLibImport').onclick = pickAndImport;
   $('btnTranscribe').onclick = () => runTranscribe();
   $('btnImportSrt').onclick = () => importSrtFromFile();
+  $('btnExportSrt').onclick = () => exportSrt();
   $('btnImportXml').onclick = () => importXmlFromFile();
   $('btnOpen').onclick = () => openProject();
   $('btnSave').onclick = () => saveProject();
@@ -150,6 +151,9 @@ function wireTimelineToolbar() {
   $('btnSelectAllTelops').onclick = () => { selectAllTelops(); toast('全テロップを選択しました（右で一括編集）'); };
   $('btnAddTrack').onclick = () => { addTrack('visual'); toast('トラックを追加しました（動画・画像・テロップを自由に配置できます）'); };
   $('btnAddAudioLayer').onclick = () => { addTrack('audio'); toast('音声トラックを追加しました'); };
+  $('btnMarker').onclick = () => { toggleMarkerAtPlayhead(); };
+  $('btnGuides').onclick = () => { const on = toggleGuides(); $('btnGuides').classList.toggle('active', on); };
+  $('btnGuides').classList.toggle('active', getGuides());
   $('btnZoomIn').onclick = zoomIn;
   $('btnZoomOut').onclick = zoomOut;
   $('btnZoomFit').onclick = zoomFit;
@@ -209,6 +213,7 @@ function wireKeyboard() {
     if (e.key.toLowerCase() === 's') { e.preventDefault(); splitAtPlayhead(); return; }  // S: 分割
     if (e.key.toLowerCase() === 'a') { e.preventDefault(); cutBefore(); return; }         // A: 前をカット
     if (e.key.toLowerCase() === 'd') { e.preventDefault(); cutAfter(); return; }          // D: 後ろをカット
+    if (e.key.toLowerCase() === 'm') { e.preventDefault(); toggleMarkerAtPlayhead(); return; } // M: マーカー
 
     const fps = getProject().settings.fps || 30;
     if (e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - (e.shiftKey ? 1 : 1 / fps)); return; }

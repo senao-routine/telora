@@ -20,6 +20,7 @@ let rafId = null;
 let wallStartPerf = 0, wallStartT = 0;
 let hitBoxes = [];
 let dragState = null;
+let guidesOn = (typeof localStorage !== 'undefined' && localStorage.getItem('telora.guides') === '1');
 const imgCache = new Map();
 const audioEls = new Map(); // 音声クリップ id -> HTMLAudioElement
 const trackVideoEls = new Map(); // 非ベース動画トラック id -> HTMLVideoElement
@@ -405,8 +406,34 @@ export function render(t) {
       if (isDraggable(hit)) drawHandles(hit.bbox); // 大きさ変更用の丸ハンドル
     }
   }
+  if (guidesOn) drawGuides();
   updateStatus(baseStatus);
   updateReadout(t);
+}
+
+// セーフゾーン・三分割グリッド・中央十字のガイド
+export function toggleGuides() {
+  guidesOn = !guidesOn;
+  try { localStorage.setItem('telora.guides', guidesOn ? '1' : '0'); } catch (_) {}
+  render(getPlayhead());
+  return guidesOn;
+}
+export function getGuides() { return guidesOn; }
+function drawGuides() {
+  const W = canvas.width, H = canvas.height;
+  ctx.save();
+  ctx.lineWidth = Math.max(1, H * 0.0015);
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.setLineDash([7, 7]);
+  for (const a of [0.05, 0.1]) ctx.strokeRect(W * a, H * a, W * (1 - 2 * a), H * (1 - 2 * a));
+  ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  for (let i = 1; i < 3; i++) {
+    ctx.beginPath(); ctx.moveTo(W * i / 3, 0); ctx.lineTo(W * i / 3, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, H * i / 3); ctx.lineTo(W, H * i / 3); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.beginPath(); ctx.moveTo(W / 2, H * 0.45); ctx.lineTo(W / 2, H * 0.55);
+  ctx.moveTo(W * 0.46, H / 2); ctx.lineTo(W * 0.54, H / 2); ctx.stroke();
+  ctx.restore();
 }
 
 // 四隅の丸ハンドル（リサイズ用）を描画

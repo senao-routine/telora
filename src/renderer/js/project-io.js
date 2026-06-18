@@ -99,7 +99,8 @@ function normalizeProject(p) {
       tracks.unshift(tt); // テロップは上位 visual トラックへ
     }
   }
-  return { version: 2, name: p.name || '無題のプロジェクト', settings, media, tracks };
+  const markers = Array.isArray(p.markers) ? p.markers.filter((m) => m && isFinite(m.t)) : [];
+  return { version: 2, name: p.name || '無題のプロジェクト', settings, media, tracks, markers };
 }
 
 function normalizeClip(c, trackKind) {

@@ -4,7 +4,7 @@ import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
   getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, totalDuration, clipDur, clipEnd, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack,
-  getTool, getRange, setRange,
+  getTool, getRange, setRange, getMarkers,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { seek } from './preview.js';
@@ -94,6 +94,12 @@ function renderRuler(cw, P) {
     const left = t * P;
     ruler.appendChild(el('div', { class: 'tick', style: `left:${left}px` }));
     ruler.appendChild(el('div', { class: 'tick-label', style: `left:${left}px`, text: fmtRuler(t) }));
+  }
+  // マーカー（クリックで移動）
+  for (const mk of getMarkers()) {
+    const m = el('div', { class: 'tl-marker', style: `left:${mk.t * P}px`, title: `マーカー ${fmtTime(mk.t)}` });
+    m.addEventListener('pointerdown', (e) => { e.stopPropagation(); seek(mk.t); });
+    ruler.appendChild(m);
   }
 }
 function niceStep(P) {

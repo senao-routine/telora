@@ -238,6 +238,17 @@ ipcMain.handle('export-dialog', async (_e, defaultName) => {
   return { canceled: false, filePath: res.filePath };
 });
 
+// 汎用の保存ダイアログ（SRT・静止画など）
+ipcMain.handle('save-file-dialog', async (_e, { title, defaultName, filters } = {}) => {
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: title || '保存',
+    defaultPath: defaultName || 'file',
+    filters: filters || [{ name: 'すべてのファイル', extensions: ['*'] }],
+  });
+  if (res.canceled) return { canceled: true };
+  return { canceled: false, filePath: res.filePath };
+});
+
 let exportCanceled = false;
 
 ipcMain.handle('export', async (event, payload) => {
