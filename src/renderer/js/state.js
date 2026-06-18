@@ -33,7 +33,8 @@ const state = {
   project: freshProject(),
   ui: {
     playhead: 0,
-    selection: null,     // { trackId, clipId }
+    selection: null,     // { trackId, clipId }（primary：インスペクタ編集対象）
+    selectedIds: [],     // 複数選択中のクリップ id 群
     pxPerSec: 80,
     playing: false,
     projectPath: null,
@@ -111,13 +112,41 @@ export function newProject() {
   clearDirty(); emit('playhead');
 }
 
-// ---- 選択 ----
-export function setSelection(sel) { state.ui.selection = sel; emit('selection'); }
+// ---- 選択（単一 selection ＋ 複数 selectedIds）----
+export function setSelection(sel) {
+  state.ui.selection = sel;
+  state.ui.selectedIds = (sel && sel.clipId) ? [sel.clipId] : [];
+  emit('selection');
+}
 export function getSelection() { return state.ui.selection; }
+export function getSelectedIds() { return state.ui.selectedIds || []; }
+export function isSelected(id) { return (state.ui.selectedIds || []).includes(id); }
+// Shift/Cmd クリックでの追加・解除。primary は最後に触れたクリップ。
+export function toggleSelect(trackId, clipId) {
+  const ids = (state.ui.selectedIds || []).slice();
+  const i = ids.indexOf(clipId);
+  if (i >= 0) { ids.splice(i, 1); state.ui.selection = ids.length ? findSel(ids[ids.length - 1]) : null; }
+  else { ids.push(clipId); state.ui.selection = { trackId, clipId }; }
+  state.ui.selectedIds = ids;
+  emit('selection');
+}
+function findSel(id) { const f = findClip(id); return f ? { trackId: f.track.id, clipId: id } : null; }
+export function getSelectedClips() {
+  const out = [];
+  for (const id of (state.ui.selectedIds || [])) { const f = findClip(id); if (f) out.push(f); }
+  return out;
+}
+export function setMultiSelection(ids) {
+  state.ui.selectedIds = ids.slice();
+  const last = ids[ids.length - 1];
+  state.ui.selection = last ? findSel(last) : null;
+  emit('selection');
+}
 function sanitizeSelection() {
+  state.ui.selectedIds = (state.ui.selectedIds || []).filter((id) => findClip(id));
   const sel = state.ui.selection;
   if (!sel || sel.allTelops) return;
-  if (!findClip(sel.clipId)) state.ui.selection = null;
+  if (!findClip(sel.clipId)) state.ui.selection = state.ui.selectedIds.length ? findSel(state.ui.selectedIds[state.ui.selectedIds.length - 1]) : null;
 }
 
 // 全テロップ選択（一括編集モード）

@@ -2,7 +2,7 @@
 import { el, clamp, fmtRuler, fmtTime, basename, uid } from './util.js';
 import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
-  getSelection, setSelection, totalDuration, clipDur, clipEnd, getTrack,
+  getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, totalDuration, clipDur, clipEnd, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack,
   getTool, getRange, setRange,
 } from './state.js';
@@ -141,7 +141,7 @@ function renderTracks(P) {
 function renderClip(track, clip, P, sel) {
   const left = clip.start * P;
   const width = Math.max(6, clipDur(clip) * P);
-  const selected = sel && sel.clipId === clip.id;
+  const selected = isSelected(clip.id);
   const kindClass = clip.kind === 'text' ? 'clip-text' : clip.kind === 'image' ? 'clip-image' : clip.kind === 'audio' ? 'clip-audio' : 'clip-video';
   const children = [el('div', { class: 'trim left', 'data-trim': 'left' })];
 
@@ -170,7 +170,7 @@ function renderSelectionOnly() {
   const sel = getSelection();
   tracksEl.querySelectorAll('.clip').forEach((n) => {
     const isText = n.classList.contains('clip-text');
-    const on = !!sel && (sel.allTelops ? isText : sel.clipId === n.dataset.id);
+    const on = (!!sel && sel.allTelops && isText) || isSelected(n.dataset.id);
     n.classList.toggle('selected', on);
   });
 }
@@ -237,12 +237,22 @@ function startClipDrag(e, track, clip) {
   e.stopPropagation();
   if (getTool() === 'range') { startRangeDrag(e); return; }
   const trim = e.target && e.target.dataset ? e.target.dataset.trim : null;
-  setSelection({ trackId: track.id, clipId: clip.id });
+  // Shift/Cmd/Ctrl クリック：選択に追加/解除（ドラッグはしない）
+  if (!trim && (e.shiftKey || e.metaKey || e.ctrlKey)) { toggleSelect(track.id, clip.id); return; }
+  // 既に複数選択に含まれるクリップを掴んだら、選択を保ったままグループ移動
+  const inMulti = !trim && getSelectedIds().length > 1 && isSelected(clip.id);
+  if (!inMulti) setSelection({ trackId: track.id, clipId: clip.id });
+  let groupOrig = null;
+  if (inMulti) {
+    groupOrig = {};
+    for (const id of getSelectedIds()) { const f = getTrackClip(id); if (f) groupOrig[id] = { start: f.clip.start, end: f.clip.end }; }
+  }
   // 履歴は実際に動かした瞬間に積む（単なる選択クリックで undo 履歴を汚さない）
   drag = {
     kind: trim ? 'trim' : 'move', side: trim,
     trackId: track.id, clipId: clip.id, startX: e.clientX, startY: e.clientY, moved: false, historyPushed: false,
     alt: e.altKey, duplicated: false,
+    group: inMulti ? getSelectedIds().slice() : null, groupOrig,
     origStart: clip.start, origIn: clip.in, origOut: clip.out, origEnd: clip.end,
   };
 }
@@ -262,6 +272,20 @@ function onMove(e) {
   if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD && !drag.moved && drag.kind === 'move') return;
   drag.moved = true;
   if (!drag.historyPushed) { pushHistory(); drag.historyPushed = true; }
+
+  // 複数選択のグループ移動（横方向のみ。primary をスナップした delta を全選択へ適用）
+  if (drag.group) {
+    let ns = Math.max(0, snapTime(Math.max(0, drag.origStart + dt), drag.clipId));
+    let appliedDt = ns - drag.origStart;
+    for (const id of drag.group) { const o = drag.groupOrig[id]; if (o) appliedDt = Math.max(appliedDt, -o.start); }
+    for (const id of drag.group) {
+      const f = getTrackClip(id); const o = drag.groupOrig[id]; if (!f || !o) continue;
+      if (f.clip.kind === 'text') { const d = o.end - o.start; f.clip.start = o.start + appliedDt; f.clip.end = f.clip.start + d; }
+      else f.clip.start = o.start + appliedDt;
+    }
+    noteDirty(); emit('project');
+    return;
+  }
 
   // Alt+ドラッグ：移動開始時にクリップを複製し、コピー側を動かす（元は残す）
   if (drag.kind === 'move' && drag.alt && !drag.duplicated) {
@@ -323,6 +347,7 @@ function onUp() {
   const wasEdit = drag.kind !== 'scrub';
   const trackId = drag.trackId;
   const spawnedTopId = drag.spawnedTopId;
+  const groupMoved = !!drag.group;
   drag = null;
   if (wasEdit) {
     // 上ドラッグで生成したが結局空になったトラックは片付ける
@@ -333,8 +358,8 @@ function onUp() {
       }
     }
     // クリップを start 順に整列（重なりはそのまま許容）
-    const track = trackId ? getTrack(trackId) : null;
-    if (track) track.clips.sort((a, b) => a.start - b.start);
+    if (groupMoved) { for (const tr of getTracks()) tr.clips.sort((a, b) => a.start - b.start); }
+    else { const track = trackId ? getTrack(trackId) : null; if (track) track.clips.sort((a, b) => a.start - b.start); }
     emit('project');
   }
   if (!isPlaying()) seek(getPlayhead());

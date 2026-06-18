@@ -2,7 +2,7 @@
 import {
   getProject, mutate, getPlayhead, getSelection, setSelection, findClip,
   clipDur, clipEnd, baseClipAtTime, defaultTextClip, getTracks, totalDuration,
-  slotFree, MIN_CLIP,
+  slotFree, MIN_CLIP, getSelectedIds, getSelectedClips, setMultiSelection,
 } from './state.js';
 import { uid } from './util.js';
 import { findFreeSlot } from './media.js';
@@ -85,18 +85,15 @@ export function cutAfter() {
   toast('再生位置より後ろをカットしました');
 }
 
-// 選択削除
+// 選択削除（複数選択に対応）
 export function deleteSelection() {
-  const sel = getSelection();
-  if (!sel) { toast('削除する対象を選択してください', 'err'); return; }
-  const f = findClip(sel.clipId);
-  if (!f) { toast('対象が見つかりません', 'err'); return; }
-  mutate(() => {
-    const ff = findClip(sel.clipId);
-    ff.track.clips.splice(ff.index, 1);
+  const ids = getSelectedIds();
+  if (!ids.length) { toast('削除する対象を選択してください', 'err'); return; }
+  mutate((p) => {
+    for (const tr of p.tracks) tr.clips = tr.clips.filter((c) => !ids.includes(c.id));
   });
   setSelection(null);
-  toast('削除しました');
+  toast(ids.length > 1 ? `${ids.length}件を削除しました` : '削除しました');
 }
 
 // テロップ追加：再生位置に置く。上半分(visual)の空いているトラックを上から探し、
@@ -125,82 +122,80 @@ export function addTelopAtPlayhead() {
 
 function track_sort(tr) { tr.clips.sort((a, b) => a.start - b.start); }
 
-// ---- コピー / 貼り付け / 複製 ----
-let clipboard = null;
+// ---- コピー / 貼り付け / 複製（複数選択対応）----
+let clipboard = null; // { anchor, items:[{clip, trackId}] }
 export function copySelection() {
-  const sel = getSelection();
-  if (!sel || sel.allTelops) { toast('コピーするクリップを選択してください', 'err'); return; }
-  const f = findClip(sel.clipId);
-  if (!f) return;
-  clipboard = { clip: JSON.parse(JSON.stringify(f.clip)), trackId: f.track.id, trackKind: f.track.kind };
-  toast('コピーしました（Cmd/Ctrl+V で貼り付け）');
+  const items = getSelectedClips();
+  if (!items.length) { toast('コピーするクリップを選択してください', 'err'); return; }
+  const anchor = Math.min(...items.map((f) => f.clip.start));
+  clipboard = { anchor, items: items.map((f) => ({ clip: JSON.parse(JSON.stringify(f.clip)), trackId: f.track.id })) };
+  toast(items.length > 1 ? `${items.length}件をコピーしました` : 'コピーしました（Cmd/Ctrl+V で貼り付け）');
 }
 export function cutSelection() {
-  const sel = getSelection();
-  if (!sel || sel.allTelops) { toast('切り取るクリップを選択してください', 'err'); return; }
+  if (!getSelectedIds().length) { toast('切り取るクリップを選択してください', 'err'); return; }
   copySelection();
   deleteSelection();
 }
-function placeClone(srcClip, trackId, trackKind, atStart) {
-  let track = getTracks().find((t) => t.id === trackId) || getTracks().find((t) => t.kind === trackKind);
-  if (!track) { toast('貼り付け先のトラックがありません', 'err'); return null; }
-  let newId = null;
-  mutate(() => {
-    const tr = getTracks().find((x) => x.id === track.id);
-    const c = JSON.parse(JSON.stringify(srcClip));
-    c.id = uid(c.kind === 'text' ? 'text' : 'clip');
-    const dur = c.kind === 'text' ? (c.end - c.start) : (c.out - c.in);
-    const start = findFreeSlot(tr, Math.max(0, atStart), dur, null);
-    if (c.kind === 'text') { c.start = start; c.end = start + dur; } else c.start = start;
-    tr.clips.push(c);
-    tr.clips.sort((a, b) => a.start - b.start);
-    newId = c.id;
-  });
-  if (newId) { const f = findClip(newId); if (f) setSelection({ trackId: f.track.id, clipId: newId }); }
-  return newId;
-}
-// 貼り付け：再生位置(カーソル)に置く。元と同じ位置（カーソル未移動）で重なる場合は
-// 1つ上のトラックへ繰り上げて配置する（無ければ最上段に新規トラックを自動作成）。他ソフト同様。
-export function pasteClipboard() {
-  if (!clipboard) { toast('コピーされたクリップがありません', 'err'); return; }
-  const c0 = clipboard.clip;
-  const start = Math.max(0, getPlayhead());
-  const dur = c0.kind === 'text' ? (c0.end - c0.start) : (c0.out - c0.in);
-  let newId = null, finalTrackId = null;
-  mutate((p) => {
-    const c = JSON.parse(JSON.stringify(c0));
-    c.id = uid(c.kind === 'text' ? 'text' : 'clip');
-    if (c.kind === 'text') { c.start = start; c.end = start + dur; } else c.start = start;
-
-    if (c.kind === 'audio') {
-      const audios = p.tracks.filter((t) => t.kind === 'audio');
-      const src = p.tracks.find((t) => t.id === clipboard.trackId && t.kind === 'audio');
-      let track = (src && slotFree(src, start, dur)) ? src : (audios.find((t) => slotFree(t, start, dur)) || null);
-      if (!track) { track = { id: uid('trk'), kind: 'audio', name: 'A' + (audios.length + 1), clips: [] }; p.tracks.push(track); }
-      track.clips.push(c); track.clips.sort((a, b) => a.start - b.start);
-      newId = c.id; finalTrackId = track.id;
-      return;
-    }
-    // 映像系：同位置が空いていれば元トラック、埋まっていれば1つ上の visual トラックへ
-    const src = p.tracks.find((t) => t.id === clipboard.trackId && t.kind === 'visual');
-    let track = (src && slotFree(src, start, dur)) ? src : null;
-    if (!track) {
-      const startIdx = src ? p.tracks.indexOf(src) : p.tracks.length;
-      for (let i = startIdx - 1; i >= 0; i--) { const t = p.tracks[i]; if (t.kind === 'visual' && slotFree(t, start, dur)) { track = t; break; } }
-    }
-    if (!track) { track = { id: uid('trk'), kind: 'visual', name: 'V' + (p.tracks.filter((t) => t.kind === 'visual').length + 1), clips: [] }; p.tracks.unshift(track); }
+// 1クリップを配置：同位置が空けば元トラック、埋まっていれば1つ上(visual)/別(audio)、無ければ新規トラック
+function placeBumped(p, c, srcTrackId, start, dur) {
+  if (c.kind === 'audio') {
+    const audios = p.tracks.filter((t) => t.kind === 'audio');
+    const src = p.tracks.find((t) => t.id === srcTrackId && t.kind === 'audio');
+    let track = (src && slotFree(src, start, dur)) ? src : (audios.find((t) => slotFree(t, start, dur)) || null);
+    if (!track) { track = { id: uid('trk'), kind: 'audio', name: 'A' + (audios.length + 1), clips: [] }; p.tracks.push(track); }
     track.clips.push(c); track.clips.sort((a, b) => a.start - b.start);
-    newId = c.id; finalTrackId = track.id;
+    return track;
+  }
+  const src = p.tracks.find((t) => t.id === srcTrackId && t.kind === 'visual');
+  let track = (src && slotFree(src, start, dur)) ? src : null;
+  if (!track) {
+    const startIdx = src ? p.tracks.indexOf(src) : p.tracks.length;
+    for (let i = startIdx - 1; i >= 0; i--) { const t = p.tracks[i]; if (t.kind === 'visual' && slotFree(t, start, dur)) { track = t; break; } }
+  }
+  if (!track) { track = { id: uid('trk'), kind: 'visual', name: 'V' + (p.tracks.filter((t) => t.kind === 'visual').length + 1), clips: [] }; p.tracks.unshift(track); }
+  track.clips.push(c); track.clips.sort((a, b) => a.start - b.start);
+  return track;
+}
+function cloneClip(c0, start, dur) {
+  const c = JSON.parse(JSON.stringify(c0));
+  c.id = uid(c.kind === 'text' ? 'text' : 'clip');
+  if (c.kind === 'text') { c.start = start; c.end = start + dur; } else c.start = start;
+  return c;
+}
+// 貼り付け：再生位置を基準に相対オフセットを保って配置。重なる場合は上トラックへ繰り上げ。
+export function pasteClipboard() {
+  if (!clipboard || !clipboard.items.length) { toast('コピーされたクリップがありません', 'err'); return; }
+  const ph = Math.max(0, getPlayhead());
+  const newIds = [];
+  mutate((p) => {
+    for (const it of clipboard.items) {
+      const c0 = it.clip;
+      const dur = c0.kind === 'text' ? (c0.end - c0.start) : (c0.out - c0.in);
+      const start = Math.max(0, ph + (c0.start - clipboard.anchor));
+      const c = cloneClip(c0, start, dur);
+      placeBumped(p, c, it.trackId, start, dur);
+      newIds.push(c.id);
+    }
   });
-  if (newId) setSelection({ trackId: finalTrackId, clipId: newId });
-  toast('貼り付けました');
+  if (newIds.length) setMultiSelection(newIds);
+  toast(newIds.length > 1 ? `${newIds.length}件を貼り付けました` : '貼り付けました');
 }
 export function duplicateSelection() {
-  const sel = getSelection();
-  if (!sel || sel.allTelops) { toast('複製するクリップを選択してください', 'err'); return; }
-  const f = findClip(sel.clipId);
-  if (!f) return;
-  if (placeClone(f.clip, f.track.id, f.track.kind, clipEnd(f.clip))) toast('複製しました');
+  const items = getSelectedClips();
+  if (!items.length) { toast('複製するクリップを選択してください', 'err'); return; }
+  const newIds = [];
+  mutate((p) => {
+    for (const f of items) {
+      const c0 = f.clip;
+      const dur = c0.kind === 'text' ? (c0.end - c0.start) : (c0.out - c0.in);
+      const start = clipEnd(c0); // 直後へ
+      const c = cloneClip(c0, start, dur);
+      placeBumped(p, c, f.track.id, start, dur);
+      newIds.push(c.id);
+    }
+  });
+  if (newIds.length) setMultiSelection(newIds);
+  toast(newIds.length > 1 ? `${newIds.length}件を複製しました` : '複製しました');
 }
 
 // 範囲 [a,b] を全トラックから削除し、後続を左へ詰める（リップル削除）
