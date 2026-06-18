@@ -1,6 +1,6 @@
 // 書き出し：レイヤを収集 → テロップ/オーバーレイ画像をフルフレームPNG化 → FFmpeg 実行
 import {
-  getProject, mediaById, clipDur, clipEnd, totalDuration, baseTrack, tracksBottomToTop,
+  getProject, mediaById, clipDur, clipEnd, totalDuration, baseTrack, tracksBottomToTop, getRange,
 } from './state.js';
 import { renderTelopPng } from './render-telop.js';
 import { fileUrl } from './util.js';
@@ -83,8 +83,23 @@ export async function runExport() {
   const tools = await window.api.checkTools();
   if (!tools.ffmpeg) { toast('FFmpeg が見つかりません。書き出しには FFmpeg が必要です。', 'err'); return; }
 
-  const defaultName = (project.name && project.name !== '無題のプロジェクト' ? project.name : 'export') + '.mp4';
-  const dlg = await window.api.exportDialog(defaultName);
+  // 書き出しオプション（形式・品質・HW・範囲）をUIから取得
+  const fmtEl = document.getElementById('formatSelect');
+  const qEl = document.getElementById('qualitySelect');
+  const hwEl = document.getElementById('hwCheck');
+  const format = (fmtEl && fmtEl.value) || 'mp4';
+  const quality = (qEl && qEl.value) || 'normal';
+  const hwaccel = !!(hwEl && hwEl.checked);
+  const ext = format === 'mp3' ? 'mp3' : format === 'webm' ? 'webm' : 'mp4';
+  let range = null;
+  const r = getRange();
+  if (r && (r.end - r.start) > 0.1) {
+    range = { start: r.start, end: r.end };
+    if (!confirm(`選択範囲 ${(r.end - r.start).toFixed(1)}秒 のみを書き出します。\n（キャンセルすると全体を書き出します）`)) range = null;
+  }
+
+  const baseName = (project.name && project.name !== '無題のプロジェクト' ? project.name : 'export');
+  const dlg = await window.api.saveFileDialog({ title: '書き出し', defaultName: `${baseName}.${ext}`, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
   if (dlg.canceled || !dlg.filePath) return;
 
   showModal();
@@ -143,7 +158,7 @@ export async function runExport() {
     return;
   }
 
-  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: dlg.filePath };
+  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: dlg.filePath, options: { format, quality, hwaccel, range } };
 
   if (unsubProgress) unsubProgress();
   unsubProgress = window.api.onExportProgress(({ ratio, message }) => setProgress(ratio, message));

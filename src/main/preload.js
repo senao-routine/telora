@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ファイル入出力
   writeFile: (filePath, content) => ipcRenderer.invoke('write-file', filePath, content),
+  writeDataUrl: (filePath, dataUrl) => ipcRenderer.invoke('write-dataurl', filePath, dataUrl),
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
 
   // 書き出し

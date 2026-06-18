@@ -462,28 +462,42 @@ async function exportTimeline(payload, onProgress, registerProc) {
       audioOut = 'amixed';
     }
 
-    const totalDuration = DUR;
+    // 書き出しオプション（形式・品質・範囲・ハードウェアエンコード）
+    const opts = payload.options || {};
+    const format = opts.format || 'mp4';      // mp4 | webm | mp3
+    const quality = opts.quality || 'normal'; // high | normal | light
+    const hw = !!opts.hwaccel;
+    const range = (opts.range && (opts.range.end - opts.range.start) > 0.05) ? opts.range : null;
+
+    // 範囲書き出し：最終 vout/aout を範囲へトリム
+    let vmap = 'vout', amap = audioOut, outDur = DUR;
+    if (range) {
+      const rs = Math.max(0, range.start), re = Math.min(DUR, range.end);
+      filterParts.push(`[vout]trim=start=${rs.toFixed(3)}:end=${re.toFixed(3)},setpts=PTS-STARTPTS[voutR]`);
+      filterParts.push(`[${audioOut}]atrim=start=${rs.toFixed(3)}:end=${re.toFixed(3)},asetpts=PTS-STARTPTS[aoutR]`);
+      vmap = 'voutR'; amap = 'aoutR'; outDur = re - rs;
+    }
+
+    // 音声のみ出力では映像出力が未接続になるため nullsink で消費する
+    if (format === 'mp3') filterParts.push(`[${vmap}]nullsink`);
+
+    const totalDuration = outDur;
     const filterGraph = filterParts.join(';');
     if (process.env.TCE_FILTER_DEBUG) console.error('FILTERGRAPH:\n' + filterGraph.replace(/;/g, ';\n'));
 
-    const args = [
-      '-y',
-      '-hide_banner',
-      ...inputArgs,
-      '-filter_complex', filterGraph,
-      '-map', '[vout]',
-      '-map', `[${audioOut}]`,
-      '-c:v', 'libx264',
-      '-preset', 'medium',
-      '-crf', '20',
-      '-pix_fmt', 'yuv420p',
-      '-r', String(FPS),
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-movflags', '+faststart',
-      '-t', DUR.toFixed(3),
-      outputPath,
-    ];
+    const crf = { high: '18', normal: '20', light: '26' }[quality] || '20';
+    const args = ['-y', '-hide_banner', ...inputArgs, '-filter_complex', filterGraph];
+    if (format === 'mp3') {
+      args.push('-map', `[${amap}]`, '-c:a', 'libmp3lame', '-q:a', '2', '-t', outDur.toFixed(3), outputPath);
+    } else if (format === 'webm') {
+      args.push('-map', `[${vmap}]`, '-map', `[${amap}]`, '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', crf, '-pix_fmt', 'yuv420p', '-r', String(FPS), '-c:a', 'libopus', '-b:a', '160k', '-t', outDur.toFixed(3), outputPath);
+    } else {
+      const vcodec = hw ? 'h264_videotoolbox' : 'libx264';
+      args.push('-map', `[${vmap}]`, '-map', `[${amap}]`, '-c:v', vcodec);
+      if (hw) args.push('-b:v', ({ high: '12M', normal: '8M', light: '4M' }[quality] || '8M'));
+      else args.push('-preset', 'medium', '-crf', crf);
+      args.push('-pix_fmt', 'yuv420p', '-r', String(FPS), '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-t', outDur.toFixed(3), outputPath);
+    }
 
     if (onProgress) onProgress(0, '書き出しを開始しています…');
 

@@ -36,7 +36,19 @@
             <option value="720x1280">縦 720×1280</option>
           </select>
         </label>
-        <button class="btn btn-primary" id="btnExport" title="動画を書き出す (Ctrl/Cmd+E)"><span class="ico">⤴</span> 書き出し</button>
+        <select id="qualitySelect" class="select" title="画質">
+          <option value="high">高画質</option>
+          <option value="normal" selected>標準</option>
+          <option value="light">軽量</option>
+        </select>
+        <select id="formatSelect" class="select" title="形式">
+          <option value="mp4" selected>MP4</option>
+          <option value="webm">WebM</option>
+          <option value="mp3">音声(MP3)</option>
+        </select>
+        <label class="reso-label" title="ハードウェアエンコードで高速化"><input type="checkbox" id="hwCheck" /> HW</label>
+        <button class="btn" id="btnSnapshot" title="現在のフレームを画像(PNG)で保存">静止画</button>
+        <button class="btn btn-primary" id="btnExport" title="動画を書き出す (Ctrl/Cmd+E)。範囲選択中は範囲のみ"><span class="ico">⤴</span> 書き出し</button>
       </div>
     </header>
 

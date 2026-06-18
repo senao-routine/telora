@@ -107,6 +107,15 @@ function wireTopbar() {
   $('btnOpen').onclick = () => openProject();
   $('btnSave').onclick = () => saveProject();
   $('btnExport').onclick = () => runExport();
+  $('btnSnapshot').onclick = async () => {
+    const cv = document.getElementById('overlay');
+    if (!cv) return;
+    const dataUrl = cv.toDataURL('image/png');
+    const dlg = await window.api.saveFileDialog({ title: '静止画を保存', defaultName: 'frame.png', filters: [{ name: 'PNG 画像', extensions: ['png'] }] });
+    if (dlg.canceled || !dlg.filePath) return;
+    const res = await window.api.writeDataUrl(dlg.filePath, dataUrl);
+    toast(res.ok ? '静止画を保存しました' : ('保存に失敗しました: ' + res.error), res.ok ? 'ok' : 'err');
+  };
   $('resoSelect').addEventListener('change', (e) => {
     const [w, h] = e.target.value.split('x').map(Number);
     pushHistory();
