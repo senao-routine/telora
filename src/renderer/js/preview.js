@@ -9,6 +9,7 @@ import {
   pushHistory, noteDirty,
 } from './state.js';
 import { drawTelop } from './render-telop.js';
+import { previewPath } from './proxy.js';
 
 const ANIM_DUR = 0.45; // アニメーションの基本秒数
 
@@ -121,7 +122,8 @@ function syncBaseVideo(t, shouldPlay) {
   const base = baseClipAtTime(t);
   if (base && base.clip.kind === 'video') {
     const m = mediaById(base.clip.mediaId);
-    if (m && loadedMediaId !== m.id) { loadedMediaId = m.id; pendingSeek = true; loadStartPerf = performance.now(); ffLastImg = null; video.src = fileUrl(m.path); video.load(); }
+    const src = m ? fileUrl(previewPath(m)) : '';
+    if (m && video._srcUrl !== src) { video._srcUrl = src; loadedMediaId = m.id; pendingSeek = true; loadStartPerf = performance.now(); ffLastImg = null; video.src = src; video.load(); }
     const sp = clipSpeed(base.clip);
     const desired = clamp(base.clip.in + (t - base.clip.start) * sp, 0, m ? m.duration : 1e9);
     try { video.playbackRate = sp; } catch (_) {}
@@ -187,7 +189,8 @@ function syncVideoTracks(t, shouldPlay) {
     const c = clipAtTimeOnTrack(track, t);
     if (c && c.kind === 'video') {
       const m = mediaById(c.mediaId);
-      if (m && el._mediaId !== m.id) { el._mediaId = m.id; el._pending = true; el.src = fileUrl(m.path); el.load(); }
+      const vsrc = m ? fileUrl(previewPath(m)) : '';
+      if (m && el._srcUrl !== vsrc) { el._srcUrl = vsrc; el._mediaId = m.id; el._pending = true; el.src = vsrc; el.load(); }
       el.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
       const sp = clipSpeed(c); try { el.playbackRate = sp; } catch (_) {}
       const desired = clamp(c.in + (t - c.start) * sp, 0, m ? m.duration : 1e9);

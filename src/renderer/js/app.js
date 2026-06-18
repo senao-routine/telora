@@ -12,6 +12,7 @@ import { saveProject, openProject, openProjectPath, getRecents, updateTitle } fr
 import { importSrtFromFile, exportSrt } from './import-srt.js';
 import { importXmlFromFile } from './import-xml.js';
 import { runTranscribe } from './transcribe-ui.js';
+import { toggleProxy, proxyEnabled } from './proxy.js';
 import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
@@ -104,6 +105,8 @@ function wireTopbar() {
   $('btnImportSrt').onclick = () => importSrtFromFile();
   $('btnExportSrt').onclick = () => exportSrt();
   $('btnImportXml').onclick = () => importXmlFromFile();
+  $('btnProxy').onclick = async () => { const on = await toggleProxy(); $('btnProxy').classList.toggle('active', on); };
+  $('btnProxy').classList.toggle('active', proxyEnabled());
   $('btnOpen').onclick = () => openProject();
   $('btnSave').onclick = () => saveProject();
   $('btnExport').onclick = () => runExport();

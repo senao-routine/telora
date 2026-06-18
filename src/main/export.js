@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 
 // FFmpeg / FFprobe の解決。GUI 起動時はシェルの PATH を継承しないことがあるため、
 // 環境変数 → よくあるインストール先（Homebrew 等）→ 素の名前 の順で探す。
@@ -543,4 +544,19 @@ async function exportTimeline(payload, onProgress, registerProc) {
   }
 }
 
-module.exports = { checkTools, probe, exportTimeline, extractFrame, FFMPEG, FFPROBE };
+// 低解像度プロキシを生成（プレビュー高速化用）。素材＋サイズ＋更新時刻でキャッシュ。
+const PROXY_DIR = path.join(os.tmpdir(), 'telora-proxies');
+async function makeProxy(srcPath) {
+  try {
+    if (!fs.existsSync(PROXY_DIR)) fs.mkdirSync(PROXY_DIR, { recursive: true });
+    const st = fs.statSync(srcPath);
+    const key = crypto.createHash('md5').update(`${srcPath}:${st.size}:${st.mtimeMs}`).digest('hex').slice(0, 16);
+    const out = path.join(PROXY_DIR, `${key}.mp4`);
+    if (fs.existsSync(out)) return { ok: true, proxyPath: out, cached: true };
+    const r = await run(FFMPEG, ['-y', '-i', srcPath, '-vf', 'scale=-2:480', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30', '-c:a', 'aac', '-b:a', '128k', out]);
+    if (r.code === 0 && fs.existsSync(out)) return { ok: true, proxyPath: out };
+    return { ok: false, error: (r.stderr || '').split('\n').filter(Boolean).slice(-3).join('\n') };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+}
+
+module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, FFMPEG, FFPROBE };

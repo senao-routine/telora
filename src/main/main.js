@@ -3,7 +3,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { checkTools, probe, exportTimeline, extractFrame } = require('./export');
+const { checkTools, probe, exportTimeline, extractFrame, makeProxy } = require('./export');
 const { transcribe, detectEngine, cancel: cancelTranscribe } = require('./transcribe');
 
 app.setName('Telora'); // メニュー等のアプリ名
@@ -151,6 +151,10 @@ ipcMain.handle('probe', async (_e, filePath) => {
 
 ipcMain.handle('extract-frame', async (_e, { path: p, time, width }) => {
   return await extractFrame(p, time, width);
+});
+
+ipcMain.handle('make-proxy', async (_e, srcPath) => {
+  return await makeProxy(srcPath);
 });
 
 ipcMain.handle('detect-stt', async () => {

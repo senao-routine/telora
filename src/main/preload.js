@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   writeFile: (filePath, content) => ipcRenderer.invoke('write-file', filePath, content),
   writeDataUrl: (filePath, dataUrl) => ipcRenderer.invoke('write-dataurl', filePath, dataUrl),
   readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
+  makeProxy: (srcPath) => ipcRenderer.invoke('make-proxy', srcPath),
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
 
   // 書き出し
