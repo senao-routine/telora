@@ -2,7 +2,8 @@
 import { el, fmtTime, clamp } from './util.js';
 import {
   getProject, on, emit, getSelection, mediaById, clipDur, clipEnd, findClip, clipSpeed,
-  pushHistory, noteDirty, totalDuration, clipMaxOut, MIN_CLIP,
+  pushHistory, noteDirty, totalDuration, clipMaxOut, MIN_CLIP, getPlayhead,
+  transformAt, hasKeyframes, setKeyframe, clearKeyframes,
   TELOP_PRESETS, TELOP_ANIMS, applyTelopPreset, getTextClips, setSelection,
 } from './state.js';
 import { splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, duplicateSelection } from './edit.js';
@@ -30,6 +31,7 @@ export function initInspector() {
   titleEl = document.getElementById('inspectorTitle');
   on('selection', renderInspector);
   on('telop-live', syncFields);
+  on('playhead', syncFields); // キーフレーム編集中はスクラブで実効値スライダーを追従
   renderInspector();
 }
 
@@ -89,18 +91,30 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('ボリューム', 0, 2, 0.05, clip.volume, (v) => { clip.volume = v; live(clip); }, pct, 'volume'));
   }
 
-  // 変形（画像・動画＝ベース動画含む）：位置・サイズ・回転・不透明度
+  // 変形（画像・動画＝ベース動画含む）：位置・サイズ・回転・不透明度（キーフレーム対応）
   if (clip.kind === 'image' || clip.kind === 'video') {
     if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 };
     const tr = clip.transform;
     if (tr.opacity == null) tr.opacity = 1;
     if (tr.rotation == null) tr.rotation = 0;
+    // キーフレームがあれば再生位置の実効値を編集対象にする
+    const localT = () => getPlayhead() - clip.start;
+    const eff = () => transformAt(clip, localT());
+    const setTf = (prop, v) => { if (hasKeyframes(clip)) setKeyframe(clip, localT(), { [prop]: v }); else tr[prop] = v; live(clip); };
+    const e0 = eff();
     body.appendChild(el('div', { class: 'inspector-section-title', text: '位置・サイズ' }));
-    body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, tr.x, (v) => { tr.x = v; live(clip); }, pct, 'tx'));
-    body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, tr.y, (v) => { tr.y = v; live(clip); }, pct, 'ty'));
-    body.appendChild(rangeField('拡大率', 0.1, 2, 0.01, tr.scale, (v) => { tr.scale = v; live(clip); }, pct, 'tscale'));
-    body.appendChild(rangeField('回転 (°)', -180, 180, 1, tr.rotation, (v) => { tr.rotation = v; live(clip); }, (v) => `${Math.round(v)}°`, 'trot'));
-    body.appendChild(rangeField('不透明度', 0, 1, 0.01, tr.opacity, (v) => { tr.opacity = v; live(clip); }, pct, 'topacity'));
+    body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, e0.x, (v) => setTf('x', v), pct, 'tx'));
+    body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, e0.y, (v) => setTf('y', v), pct, 'ty'));
+    body.appendChild(rangeField('拡大率', 0.1, 2, 0.01, e0.scale, (v) => setTf('scale', v), pct, 'tscale'));
+    body.appendChild(rangeField('回転 (°)', -180, 180, 1, e0.rotation || 0, (v) => setTf('rotation', v), (v) => `${Math.round(v)}°`, 'trot'));
+    body.appendChild(rangeField('不透明度', 0, 1, 0.01, e0.opacity != null ? e0.opacity : 1, (v) => setTf('opacity', v), pct, 'topacity'));
+    // キーフレーム（アニメーション）
+    const kfCount = (tr.keyframes || []).length;
+    body.appendChild(el('div', { class: 'inspector-section-title', text: `キーフレーム${kfCount ? `（${kfCount}）` : ''}` }));
+    body.appendChild(el('div', { class: 'btn-group' }, [
+      el('button', { onClick: () => { captureHistory(); setKeyframe(clip, localT()); live(clip); emit('project'); renderInspector(); } }, ['＋ 再生位置に追加']),
+      el('button', { onClick: () => { captureHistory(); clearKeyframes(clip); live(clip); emit('project'); renderInspector(); } }, ['クリア']),
+    ]));
     // クロップ（各辺をトリミング）
     if (!tr.crop) tr.crop = { l: 0, t: 0, r: 0, b: 0 };
     body.appendChild(el('div', { class: 'inspector-section-title', text: 'クロップ（トリミング）' }));
@@ -322,9 +336,10 @@ function syncFields() {
   setRange(fieldRefs.x, c.x, pct); setRange(fieldRefs.y, c.y, pct); setRange(fieldRefs.size, c.size, pct);
   setRange(fieldRefs.bgOpacity, c.bgOpacity, pct); setRange(fieldRefs.outlineWidth, c.outlineWidth, pct);
   if (c.transform) {
-    setRange(fieldRefs.tx, c.transform.x, pct); setRange(fieldRefs.ty, c.transform.y, pct); setRange(fieldRefs.tscale, c.transform.scale, pct);
-    if (fieldRefs.trot) setRange(fieldRefs.trot, c.transform.rotation || 0, (v) => `${Math.round(v)}°`);
-    if (fieldRefs.topacity) setRange(fieldRefs.topacity, c.transform.opacity != null ? c.transform.opacity : 1, pct);
+    const tf = hasKeyframes(c) ? transformAt(c, getPlayhead() - c.start) : c.transform;
+    setRange(fieldRefs.tx, tf.x, pct); setRange(fieldRefs.ty, tf.y, pct); setRange(fieldRefs.tscale, tf.scale, pct);
+    if (fieldRefs.trot) setRange(fieldRefs.trot, tf.rotation || 0, (v) => `${Math.round(v)}°`);
+    if (fieldRefs.topacity) setRange(fieldRefs.topacity, tf.opacity != null ? tf.opacity : 1, pct);
     if (c.transform.crop) {
       setRange(fieldRefs.crL, c.transform.crop.l || 0, pct); setRange(fieldRefs.crR, c.transform.crop.r || 0, pct);
       setRange(fieldRefs.crT, c.transform.crop.t || 0, pct); setRange(fieldRefs.crB, c.transform.crop.b || 0, pct);

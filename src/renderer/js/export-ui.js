@@ -1,6 +1,7 @@
 // 書き出し：レイヤを収集 → テロップ/オーバーレイ画像をフルフレームPNG化 → FFmpeg 実行
 import {
   getProject, mediaById, clipDur, clipEnd, totalDuration, baseTrack, tracksBottomToTop, getRange,
+  transformAt, hasKeyframes, clipSpeed,
 } from './state.js';
 import { renderTelopPng } from './render-telop.js';
 import { fileUrl } from './util.js';
@@ -54,6 +55,35 @@ function pipRect(m, transform, W, H) {
   return { pw, ph, x, y };
 }
 
+// キーフレームありクリップを書き出し用に時間サンプリングしてサブセグメント配列へ展開。
+// 各サブセグメントは補間 transform から rect/opacity を持つ（速度・クロップ・クロマ・回転も反映）。
+export function expandClipForExport(clip, m, W, H, kind) {
+  const sp = clipSpeed(clip);
+  const mk = (rectTf, inS, outS, startS, fIn, fOut) => {
+    const rect = pipRect(m, rectTf, W, H);
+    return {
+      type: kind, path: m.path, in: inS, out: outS, start: startS, ...rect,
+      opacity: rectTf.opacity != null ? rectTf.opacity : 1, rotation: rectTf.rotation || 0,
+      crop: rectTf.crop || null, chroma: rectTf.chroma || null, speed: sp,
+      fadeIn: fIn || 0, fadeOut: fOut || 0,
+    };
+  };
+  if (!hasKeyframes(clip)) {
+    return [mk(clip.transform || {}, clip.in, clip.out, clip.start, clip.fadeIn || 0, clip.fadeOut || 0)];
+  }
+  const dur = clipDur(clip);
+  const n = Math.max(1, Math.ceil(dur / 0.12)); // ~0.12秒ごとにサンプリング
+  const segDur = dur / n;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t0 = i * segDur, t1 = (i + 1) * segDur, mid = (t0 + t1) / 2;
+    const tf = transformAt(clip, mid);
+    out.push(mk(tf, clip.in + t0 * sp, clip.in + t1 * sp, clip.start + t0,
+      i === 0 ? (clip.fadeIn || 0) : 0, i === n - 1 ? (clip.fadeOut || 0) : 0));
+  }
+  return out;
+}
+
 export async function runExport() {
   const project = getProject();
   const W = project.settings.width, H = project.settings.height, fps = project.settings.fps || 30;
@@ -67,12 +97,7 @@ export async function runExport() {
       if (c.kind === 'text') continue; // テロップは overlays で処理
       const m = mediaById(c.mediaId);
       if (!m || clipDur(c) <= 0.02) continue;
-      const rect = pipRect(m, c.transform, W, H);
-      const op = (c.transform && c.transform.opacity != null) ? c.transform.opacity : 1;
-      const rotation = (c.transform && c.transform.rotation) || 0;
-      const crop = (c.transform && c.transform.crop) || null;
-      const chroma = (c.transform && c.transform.chroma) || null;
-      baseClips.push({ type: c.kind, path: m.path, in: c.in, out: c.out, start: c.start, opacity: op, rotation, crop, chroma, speed: c.speed || 1, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0, ...rect });
+      for (const seg of expandClipForExport(c, m, W, H, c.kind)) baseClips.push(seg);
     }
   }
 
@@ -128,13 +153,8 @@ export async function runExport() {
       } else if (clip.kind === 'video' && !isBase) {
         const m = mediaById(clip.mediaId);
         if (!m || clipDur(clip) <= 0.02) continue;
-        const { pw, ph, x, y } = pipRect(m, clip.transform, W, H);
-        const op = (clip.transform && clip.transform.opacity != null) ? clip.transform.opacity : 1;
-        const rotation = (clip.transform && clip.transform.rotation) || 0;
-        const crop = (clip.transform && clip.transform.crop) || null;
-        const chroma = (clip.transform && clip.transform.chroma) || null;
-        videoClips.push({ type: clip.kind, path: m.path, in: clip.in, out: clip.out, start: clip.start, pw, ph, x, y, opacity: op, rotation, crop, chroma, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
-        // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ）
+        for (const seg of expandClipForExport(clip, m, W, H, clip.kind)) videoClips.push(seg);
+        // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ・transform非依存なので1本）
         if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       }
     }

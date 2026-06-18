@@ -278,6 +278,51 @@ export function clipMaxOut(clip) {
   return m ? m.duration : clip.out;
 }
 
+// ---- キーフレーム（transform の時間変化）----
+// transform.keyframes = [{ t(クリップ相対秒), x, y, scale, opacity, rotation }] を線形補間。
+const KF_PROPS = ['x', 'y', 'scale', 'opacity', 'rotation'];
+function mergeKf(base, kf) {
+  const out = Object.assign({}, base);
+  for (const p of KF_PROPS) if (kf[p] != null) out[p] = kf[p];
+  return out;
+}
+function lerpKf(base, a, b, f) {
+  const out = Object.assign({}, base);
+  for (const p of KF_PROPS) {
+    const av = a[p] != null ? a[p] : base[p], bv = b[p] != null ? b[p] : base[p];
+    if (av != null && bv != null) out[p] = av + (bv - av) * f;
+  }
+  return out;
+}
+// クリップ相対時刻 localT における実効 transform（キーフレーム無しなら静的 transform）
+export function transformAt(clip, localT) {
+  const base = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
+  const kfs = base.keyframes;
+  if (!kfs || !kfs.length) return base;
+  if (kfs.length === 1 || localT <= kfs[0].t) return mergeKf(base, kfs[0]);
+  if (localT >= kfs[kfs.length - 1].t) return mergeKf(base, kfs[kfs.length - 1]);
+  let a = kfs[0];
+  for (let i = 1; i < kfs.length; i++) {
+    const b = kfs[i];
+    if (localT <= b.t) { const f = (localT - a.t) / ((b.t - a.t) || 1); return lerpKf(base, a, b, f); }
+    a = b;
+  }
+  return mergeKf(base, kfs[kfs.length - 1]);
+}
+export function hasKeyframes(clip) { return !!(clip && clip.transform && clip.transform.keyframes && clip.transform.keyframes.length); }
+// 再生位置(クリップ相対 localT)へキーフレームを追加/更新（現在の実効値を採用）。props で上書き。
+export function setKeyframe(clip, localT, props) {
+  const tr = clip.transform || (clip.transform = { x: 0.5, y: 0.5, scale: 1 });
+  if (!tr.keyframes) tr.keyframes = [];
+  const cur = transformAt(clip, localT);
+  const kf = { t: Math.max(0, localT) };
+  for (const p of KF_PROPS) kf[p] = (props && props[p] != null) ? props[p] : (cur[p] != null ? cur[p] : tr[p]);
+  const i = tr.keyframes.findIndex((k) => Math.abs(k.t - kf.t) < 0.03);
+  if (i >= 0) tr.keyframes[i] = kf; else { tr.keyframes.push(kf); tr.keyframes.sort((a, b) => a.t - b.t); }
+  return kf;
+}
+export function clearKeyframes(clip) { if (clip.transform) delete clip.transform.keyframes; }
+
 // ---- クリップ生成 ----
 export function makeClipFromMedia(media, start = 0) {
   if (media.type === 'image') {

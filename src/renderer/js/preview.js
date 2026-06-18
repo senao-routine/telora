@@ -4,7 +4,7 @@
 import { fileUrl, clamp, fmtTime } from './util.js';
 import {
   getProject, on, emit, mediaById, totalDuration, baseTrack, clipAtTimeOnTrack,
-  baseClipAtTime, clipEnd, clipDur, tracksBottomToTop, clipFadeAlpha, clipSpeed,
+  baseClipAtTime, clipEnd, clipDur, tracksBottomToTop, clipFadeAlpha, clipSpeed, transformAt, hasKeyframes, setKeyframe,
   setPlayhead, getPlayhead, setPlaying, isPlaying, getSelection, setSelection,
   pushHistory, noteDirty,
 } from './state.js';
@@ -285,7 +285,7 @@ function scaledBBox(sw, sh) {
 // 戻り値: 'ok' | 'loading' | 'ffloading' | 'fferror' （診断表示用）
 // ベース動画も transform（位置・サイズ）を反映する。scale=1・中央なら全画面フィットと同じ。
 function drawVideoFrame(clip, t) {
-  const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
+  const tr = transformAt(clip, t - clip.start);
   // 通常パス：<video> が復号できていればそのフレームを描画
   if (video.videoWidth && video.videoHeight && video.readyState >= 2) {
     drawTransformed(video, video.videoWidth, video.videoHeight, tr);
@@ -328,10 +328,10 @@ function getFfFrame(media, srcT) {
   return null;
 }
 
-function drawMediaClip(clip) {
+function drawMediaClip(clip, tf) {
   const img = imgCache.get(clip.mediaId);
   if (!img || !img.complete || !img.naturalWidth) return;
-  drawTransformed(img, img.naturalWidth, img.naturalHeight, clip.transform);
+  drawTransformed(img, img.naturalWidth, img.naturalHeight, tf || clip.transform);
 }
 
 function easeOutBack(x) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); }
@@ -400,22 +400,24 @@ export function render(t) {
         const bbox = drawTextClipAnimated(c, t) || measureTelop(c);
         hitBoxes.push({ clip: c, trackId: track.id, bbox, kind: 'text', isBase });
       } else if (c.kind === 'image') {
-        drawMediaClip(c);
+        const tf = transformAt(c, t - c.start);
+        drawMediaClip(c, tf);
         const img = imgCache.get(c.mediaId);
         if (img && img.complete && img.naturalWidth) {
-          hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(img.naturalWidth, img.naturalHeight, c.transform), kind: 'image', isBase });
+          hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(img.naturalWidth, img.naturalHeight, tf), kind: 'image', isBase });
         }
       } else if (c.kind === 'video') {
+        const tf = transformAt(c, t - c.start);
         if (isBase) {
           baseStatus = drawVideoFrame(c, t); // ベースは #previewVideo（音声・コーデックフォールバック）
           const bb = (video.videoWidth && video.videoHeight)
-            ? transformedBBox(video.videoWidth, video.videoHeight, c.transform)
+            ? transformedBBox(video.videoWidth, video.videoHeight, tf)
             : { x: 0, y: 0, w: canvas.width, h: canvas.height };
           hitBoxes.push({ clip: c, trackId: track.id, bbox: bb, kind: 'video', isBase: true });
         } else {
           const el = getTrackVideoEl(track.id);
-          if (el.videoWidth && el.readyState >= 2) drawTransformed(el, el.videoWidth, el.videoHeight, c.transform);
-          hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(el.videoWidth, el.videoHeight, c.transform), kind: 'video', isBase: false });
+          if (el.videoWidth && el.readyState >= 2) drawTransformed(el, el.videoWidth, el.videoHeight, tf);
+          hitBoxes.push({ clip: c, trackId: track.id, bbox: transformedBBox(el.videoWidth, el.videoHeight, tf), kind: 'video', isBase: false });
         }
       }
       ctx.globalAlpha = 1;
@@ -573,12 +575,14 @@ function clientToFrame(e) {
 // クリップの中心位置（正規化）。テロップは x,y、画像・動画は transform.x,y。
 function clipPos(clip) {
   if (clip.kind === 'text') return { x: clip.x, y: clip.y };
-  const tr = clip.transform || { x: 0.5, y: 0.5, scale: 1 };
+  const tr = transformAt(clip, getPlayhead() - clip.start);
   return { x: tr.x, y: tr.y };
 }
 function setClipPos(clip, x, y) {
-  if (clip.kind === 'text') { clip.x = x; clip.y = y; }
-  else { if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 }; clip.transform.x = x; clip.transform.y = y; }
+  if (clip.kind === 'text') { clip.x = x; clip.y = y; return; }
+  if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 };
+  if (hasKeyframes(clip)) setKeyframe(clip, getPlayhead() - clip.start, { x, y }); // キーフレーム編集
+  else { clip.transform.x = x; clip.transform.y = y; }
 }
 // ドラッグで位置・サイズを変えられるか（テロップ・画像・動画＝ベース含む）
 function isDraggable(hit) { return hit && (hit.kind === 'text' || hit.kind === 'image' || hit.kind === 'video'); }
@@ -605,7 +609,7 @@ function onPointerDown(e) {
       dragState = {
         mode: 'resize', clip, historyPushed: false, cx, cy,
         d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)),
-        origScale: clip.kind === 'text' ? null : ((clip.transform && clip.transform.scale) || 1),
+        origScale: clip.kind === 'text' ? null : (transformAt(clip, getPlayhead() - clip.start).scale || 1),
         origSize: clip.kind === 'text' ? clip.size : null,
       };
       try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
@@ -644,8 +648,11 @@ function onPointerMove(e) {
     if (dragState.clip.kind === 'text') {
       dragState.clip.size = clamp(dragState.origSize * ratio, 0.02, 0.5);
     } else {
-      if (!dragState.clip.transform) dragState.clip.transform = { x: 0.5, y: 0.5, scale: 1 };
-      dragState.clip.transform.scale = clamp(dragState.origScale * ratio, 0.05, 4);
+      const clip = dragState.clip;
+      if (!clip.transform) clip.transform = { x: 0.5, y: 0.5, scale: 1 };
+      const sc = clamp(dragState.origScale * ratio, 0.05, 4);
+      if (hasKeyframes(clip)) setKeyframe(clip, getPlayhead() - clip.start, { scale: sc });
+      else clip.transform.scale = sc;
     }
   } else {
     const nx = clamp(p.x / canvas.width - dragState.offNX, 0, 1);
