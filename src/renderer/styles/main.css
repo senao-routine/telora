@@ -72,7 +72,9 @@ body {
 .select { background: var(--bg-3); color: var(--text); border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px; font-size: 12px; cursor: pointer; }
 
 /* ---- 作業エリア ---- */
-.workspace { display: grid; grid-template-columns: 244px minmax(0, 1fr) 290px; min-height: 0; min-width: 0; overflow: hidden; background: var(--bg); }
+.workspace { display: grid; grid-template-columns: var(--lib-w, 244px) 6px minmax(0, 1fr) 6px var(--insp-w, 290px); min-height: 0; min-width: 0; overflow: hidden; background: var(--bg); }
+.col-resize { background: var(--line-strong); cursor: col-resize; transition: background .12s; z-index: 5; }
+.col-resize:hover, .col-resize.dragging { background: var(--accent); }
 .library, .inspector { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 .library { border-right: 2px solid var(--line-strong); }
 .inspector { border-left: 2px solid var(--line-strong); }

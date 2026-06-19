@@ -36,6 +36,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   wireKeyboard();
   wireFileDrop();
   wireTimelineResize();
+  wirePanelResize();
   wireHome();
 
   on('dirty', updateTitle);
@@ -231,9 +232,9 @@ function wireKeyboard() {
     const fps = getProject().settings.fps || 30;
     if (e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - (e.shiftKey ? 1 : 1 / fps)); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + (e.shiftKey ? 1 : 1 / fps)); return; }
-    // ↑＝次のクリップ境界（前方）へ、↓＝前のクリップ境界（後方）へジャンプ
-    if (e.key === 'ArrowUp') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), +1); if (p != null) seek(p); return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), -1); if (p != null) seek(p); return; }
+    // ↓＝次のクリップ境界（前方）へ、↑＝前のクリップ境界（戻る）へジャンプ
+    if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), +1); if (p != null) seek(p); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), -1); if (p != null) seek(p); return; }
     if (e.key === 'Home') { e.preventDefault(); seek(0); return; }
     if (e.key === 'End') { e.preventDefault(); seek(totalDuration()); return; }
   });
@@ -269,6 +270,38 @@ function wireTimelineResize() {
   });
 }
 function clampN(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// 左メディアパネル / 右インスペクタの幅をドラッグで調整（localStorage に保持）
+function wirePanelResize() {
+  const ws = document.querySelector('.workspace');
+  const lib = document.querySelector('.library');
+  const insp = $('inspector');
+  if (!ws) return;
+  const lw = parseFloat(localStorage.getItem('tce.libW') || '');
+  if (isFinite(lw)) ws.style.setProperty('--lib-w', clampN(lw, 160, 520) + 'px');
+  const iw = parseFloat(localStorage.getItem('tce.inspW') || '');
+  if (isFinite(iw)) ws.style.setProperty('--insp-w', clampN(iw, 180, 560) + 'px');
+  setupSplitter($('libResize'), () => lib.offsetWidth, (w) => ws.style.setProperty('--lib-w', w + 'px'), 160, 520, +1, 'tce.libW');
+  setupSplitter($('inspResize'), () => insp.offsetWidth, (w) => ws.style.setProperty('--insp-w', w + 'px'), 180, 560, -1, 'tce.inspW');
+}
+function setupSplitter(handle, getW, setW, min, max, dir, key) {
+  if (!handle) return;
+  let dragging = false, startX = 0, startW = 0;
+  handle.addEventListener('pointerdown', (e) => {
+    dragging = true; startX = e.clientX; startW = getW();
+    handle.classList.add('dragging');
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  window.addEventListener('pointermove', (e) => { if (!dragging) return; setW(clampN(startW + dir * (e.clientX - startX), min, max)); });
+  window.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false; handle.classList.remove('dragging');
+    const w = clampN(getW(), min, max); setW(w);
+    try { localStorage.setItem(key, String(Math.round(w))); } catch (_) {}
+    emit('settings'); // プレビューのステージ寸法を再計算
+  });
+}
 
 function wireFileDrop() {
   window.addEventListener('dragover', (e) => { e.preventDefault(); });
