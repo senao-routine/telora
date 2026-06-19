@@ -16,7 +16,7 @@ import { toggleProxy, proxyEnabled } from './proxy.js';
 import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
-  getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead,
+  getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead, nextEditPoint,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -231,6 +231,9 @@ function wireKeyboard() {
     const fps = getProject().settings.fps || 30;
     if (e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - (e.shiftKey ? 1 : 1 / fps)); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + (e.shiftKey ? 1 : 1 / fps)); return; }
+    // ↑＝次のクリップ境界（前方）へ、↓＝前のクリップ境界（後方）へジャンプ
+    if (e.key === 'ArrowUp') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), +1); if (p != null) seek(p); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), -1); if (p != null) seek(p); return; }
     if (e.key === 'Home') { e.preventDefault(); seek(0); return; }
     if (e.key === 'End') { e.preventDefault(); seek(totalDuration()); return; }
   });

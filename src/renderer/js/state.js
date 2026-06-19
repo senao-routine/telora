@@ -262,6 +262,23 @@ export function totalDuration() {
   return max;
 }
 
+// 編集点（全クリップの開始・終端＋0・総尺）を昇順で返す。クリップ間ジャンプ用。
+export function editPoints() {
+  const set = new Set([0]);
+  for (const track of state.project.tracks) {
+    for (const c of track.clips) { set.add(+c.start.toFixed(4)); set.add(+clipEnd(c).toFixed(4)); }
+  }
+  set.add(+totalDuration().toFixed(4));
+  return [...set].sort((a, b) => a - b);
+}
+// 時刻 t から方向 dir(+1=前方/次, -1=後方/前) の最も近い編集点。無ければ null。
+export function nextEditPoint(t, dir) {
+  const pts = editPoints();
+  if (dir > 0) { for (const p of pts) if (p > t + 1e-3) return p; return null; }
+  for (let i = pts.length - 1; i >= 0; i--) if (pts[i] < t - 1e-3) return pts[i];
+  return null;
+}
+
 // メイントラックの長さ（書き出し基準）
 export function baseDuration() {
   const tr = baseTrack();
