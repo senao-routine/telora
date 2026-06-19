@@ -10,6 +10,42 @@ import { toast } from './ui.js';
 
 const MIN = MIN_CLIP;
 
+// 上書き（オーバーライト）編集：同一トラックで winnerIds のクリップが重なる区間の
+// 他クリップを削る/分割して、重なりをなくす（移動・配置したクリップが勝つ）。track.clips を直接書き換える。
+function subClipPart(c, s, e) {
+  if (c.kind === 'text') return Object.assign({}, c, { id: uid('text'), start: s, end: e });
+  const sp = clipSpeed(c);
+  const inP = c.in + (s - c.start) * sp;
+  return Object.assign({}, c, { id: uid('clip'), in: inP, out: inP + (e - s) * sp, start: s, transform: c.transform ? JSON.parse(JSON.stringify(c.transform)) : undefined });
+}
+export function resolveOverwrite(track, winnerIds) {
+  const wins = track.clips.filter((c) => winnerIds.includes(c.id)).map((c) => [c.start, clipEnd(c)]);
+  if (!wins.length) return false;
+  let changed = false;
+  const out = [];
+  for (const c of track.clips) {
+    if (winnerIds.includes(c.id)) { out.push(c); continue; }
+    let segs = [[c.start, clipEnd(c)]];
+    for (const [ws, we] of wins) {
+      const next = [];
+      for (const [s, e] of segs) {
+        if (we <= s + 1e-4 || ws >= e - 1e-4) { next.push([s, e]); continue; } // 重ならない
+        if (ws > s + 1e-4) next.push([s, ws]);   // 左片
+        if (we < e - 1e-4) next.push([we, e]);    // 右片（覆われた中央は消える）
+        changed = true;
+      }
+      segs = next;
+    }
+    if (segs.length === 1 && Math.abs(segs[0][0] - c.start) < 1e-4 && Math.abs(segs[0][1] - clipEnd(c)) < 1e-4) {
+      out.push(c); // 変化なし
+    } else {
+      for (const [s, e] of segs) { if (e - s > 0.05) out.push(subClipPart(c, s, e)); else changed = true; }
+    }
+  }
+  if (changed) { track.clips = out; track.clips.sort((a, b) => a.start - b.start); }
+  return changed;
+}
+
 // 再生位置にかかっている対象クリップ（選択優先、無ければベース動画）
 function targetClipAtPlayhead() {
   const t = getPlayhead();

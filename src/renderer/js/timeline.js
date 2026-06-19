@@ -8,6 +8,7 @@ import {
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
+import { resolveOverwrite } from './edit.js';
 import { seek } from './preview.js';
 
 const MIN_TEXT = 0.2;
@@ -361,8 +362,9 @@ function onUp() {
   if (drag.kind === 'range') { drag = null; return; } // 範囲は保持
   const wasEdit = drag.kind !== 'scrub';
   const trackId = drag.trackId;
+  const movedClipId = drag.clipId;
+  const groupIds = drag.group;
   const spawnedTopId = drag.spawnedTopId;
-  const groupMoved = !!drag.group;
   drag = null;
   if (wasEdit) {
     // 上ドラッグで生成したが結局空になったトラックは片付ける
@@ -372,9 +374,17 @@ function onUp() {
         const arr = getTracks(); const i = arr.indexOf(st); if (i >= 0) arr.splice(i, 1);
       }
     }
-    // クリップを start 順に整列（重なりはそのまま許容）
-    if (groupMoved) { for (const tr of getTracks()) tr.clips.sort((a, b) => a.start - b.start); }
-    else { const track = trackId ? getTrack(trackId) : null; if (track) track.clips.sort((a, b) => a.start - b.start); }
+    // 整列＋同一トラックの重なりを上書き解決（移動/配置したクリップが勝ち、下のクリップの重なり区間を削る）
+    if (groupIds) {
+      for (const tr of getTracks()) {
+        tr.clips.sort((a, b) => a.start - b.start);
+        const tw = tr.clips.filter((c) => groupIds.includes(c.id)).map((c) => c.id);
+        if (tw.length) resolveOverwrite(tr, tw);
+      }
+    } else {
+      const track = trackId ? getTrack(trackId) : null;
+      if (track) { track.clips.sort((a, b) => a.start - b.start); if (movedClipId) resolveOverwrite(track, [movedClipId]); }
+    }
     emit('project');
   }
   if (!isPlaying()) seek(getPlayhead());
