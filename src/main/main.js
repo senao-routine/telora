@@ -223,8 +223,11 @@ ipcMain.handle('write-dataurl', async (_e, filePath, dataUrl) => {
   }
 });
 
-ipcMain.handle('read-file-buffer', async (_e, filePath) => {
+ipcMain.handle('read-file-buffer', async (_e, filePath, maxBytes) => {
   try {
+    const st = fs.statSync(filePath);
+    const cap = maxBytes || 160 * 1024 * 1024; // 既定 160MB 上限（波形用・メモリ保護）
+    if (st.size > cap) return { ok: false, error: 'file too large', size: st.size };
     const buf = fs.readFileSync(filePath);
     return { ok: true, base64: buf.toString('base64') };
   } catch (err) {

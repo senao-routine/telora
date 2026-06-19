@@ -155,7 +155,7 @@ export async function importMedia(paths, { addToTimeline = true } = {}) {
     }
 
     project.media.push(media);
-    if (media.type !== 'image') ensureWaveform(media); // 波形ピークを準備
+    if (media.type === 'audio') ensureWaveform(media); // 波形は音声クリップのみ（動画は全読み込みで重く危険なため除外）
     added.push(media);
     if (addToTimeline) addClipFromMedia(media.id, { silent: true });
   }
