@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   writeDataUrl: (filePath, dataUrl) => ipcRenderer.invoke('write-dataurl', filePath, dataUrl),
   readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
   makeProxy: (srcPath) => ipcRenderer.invoke('make-proxy', srcPath),
+  extractAudio: (opts) => ipcRenderer.invoke('extract-audio', opts),
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
 
   // 書き出し

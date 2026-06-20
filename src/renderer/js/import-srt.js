@@ -73,19 +73,20 @@ export async function importSrtFromFile() {
   importSrtText(res.content);
 }
 
-export function importSrtText(text) {
+export function importSrtText(text, { offset = 0 } = {}) {
   const cues = parseSrt(text);
   if (cues.length === 0) { toast('字幕が見つかりませんでした', 'err'); return; }
 
-  // 字幕は専用の visual トラックを最上段に作ってまとめて配置する
+  // 字幕は専用の visual トラックを最上段に作ってまとめて配置する（offset でタイムライン位置へずらす）
   let lastId = null, trackId = null;
   mutate((p) => {
     const track = { id: uid('trk'), kind: 'visual', name: '字幕', clips: [] };
     p.tracks.unshift(track);
     for (const cue of cues) {
-      const clip = defaultTextClip(cue.start);
-      clip.start = cue.start;
-      clip.end = cue.end;
+      const st = Math.max(0, cue.start + offset);
+      const clip = defaultTextClip(st);
+      clip.start = st;
+      clip.end = Math.max(st + 0.2, cue.end + offset);
       clip.text = cue.text;
       track.clips.push(clip);
       lastId = clip.id;

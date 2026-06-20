@@ -559,4 +559,32 @@ async function makeProxy(srcPath) {
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 }
 
-module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, FFMPEG, FFPROBE };
+// 文字起こし用に音声を抽出/ミックスして 16kHz mono wav を作る。
+// segments: [{ path, in, out, start, volume }]（start=タイムライン上の開始秒）。1本ならそのまま、複数なら adelay+amix。
+async function extractAudio(segments, duration) {
+  try {
+    if (!segments || !segments.length) return { ok: false, error: '対象の音声がありません' };
+    const out = path.join(os.tmpdir(), `telora-stt-${Date.now()}.wav`);
+    const inputArgs = []; const parts = []; const labels = [];
+    segments.forEach((s, i) => {
+      inputArgs.push('-i', s.path);
+      const ms = Math.round(Math.max(0, s.start || 0) * 1000);
+      const vin = (s.in != null ? s.in : 0).toFixed(3);
+      const vout = (s.out != null ? s.out : 0).toFixed(3);
+      const vol = (s.volume != null ? s.volume : 1).toFixed(3);
+      parts.push(`[${i}:a]atrim=start=${vin}:end=${vout},asetpts=PTS-STARTPTS,volume=${vol},adelay=${ms}|${ms},aformat=sample_fmts=s16:sample_rates=16000:channel_layouts=mono[a${i}]`);
+      labels.push(`[a${i}]`);
+    });
+    let aout;
+    if (segments.length === 1) aout = 'a0';
+    else { parts.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0:duration=longest[mix]`); aout = 'mix'; }
+    const args = ['-y', '-hide_banner', ...inputArgs, '-filter_complex', parts.join(';'), '-map', `[${aout}]`, '-ac', '1', '-ar', '16000'];
+    if (duration && duration > 0) args.push('-t', duration.toFixed(3));
+    args.push(out);
+    const r = await run(FFMPEG, args);
+    if (r.code === 0 && fs.existsSync(out)) return { ok: true, path: out };
+    return { ok: false, error: (r.stderr || '').split('\n').filter(Boolean).slice(-3).join('\n') };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+}
+
+module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, FFMPEG, FFPROBE };
