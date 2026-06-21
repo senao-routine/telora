@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('api', {
   readFileBuffer: (filePath) => ipcRenderer.invoke('read-file-buffer', filePath),
   makeProxy: (srcPath) => ipcRenderer.invoke('make-proxy', srcPath),
   extractAudio: (opts) => ipcRenderer.invoke('extract-audio', opts),
+  audioPeaks: (opts) => ipcRenderer.invoke('audio-peaks', opts),
+  detectSilence: (opts) => ipcRenderer.invoke('detect-silence', opts),
+  saveRecording: (opts) => ipcRenderer.invoke('save-recording', opts),
   readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
 
   // 書き出し
@@ -30,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
 
   detectStt: () => ipcRenderer.invoke('detect-stt'),
   transcribe: (payload) => ipcRenderer.invoke('transcribe', payload),
+  transcribeWords: (payload) => ipcRenderer.invoke('transcribe-words', payload),
   cancelTranscribe: () => ipcRenderer.invoke('cancel-transcribe'),
   onTranscribeProgress: (cb) => {
     const handler = (_e, data) => cb(data);

@@ -2,12 +2,13 @@
 import { el, clamp, fmtRuler, fmtTime, basename, uid } from './util.js';
 import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
-  getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
-  mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack,
+  getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, setMultiSelection, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
+  mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack, toggleTrackMute,
   getTool, getRange, setRange, getMarkers,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
+import { getFrame, requestFrame, FRAME_W } from './filmstrip.js';
 import { resolveOverwrite } from './edit.js';
 import { seek } from './preview.js';
 
@@ -26,7 +27,7 @@ function trackIcon(track) {
 }
 const RULER_H = 26;
 
-let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl, rangeBandEl;
+let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl, rangeBandEl, marqueeEl;
 let drag = null;
 
 export function initTimeline() {
@@ -38,18 +39,20 @@ export function initTimeline() {
   playheadEl = document.getElementById('playhead');
   playheadTimeEl = document.getElementById('playheadTime');
   rangeBandEl = document.getElementById('rangeBand');
+  marqueeEl = document.getElementById('marquee');
 
   on('project', render);
   on('selection', renderSelectionOnly);
   on('zoom', render);
   on('waveform', render);
+  on('filmstrip', render);
   on('playhead', updatePlayhead);
   on('range', updateRangeBand);
   on('tool', updateToolCursor);
 
   ruler.addEventListener('pointerdown', (e) => startScrub(e));
   scrollEl.addEventListener('pointerdown', (e) => {
-    if (e.target.classList && (e.target.classList.contains('track') || e.target === content || e.target === tracksEl)) startScrub(e);
+    if (e.target.classList && (e.target.classList.contains('track') || e.target === content || e.target === tracksEl)) startBodyDrag(e);
   });
   playheadEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); startScrub(e, true); });
 
@@ -117,10 +120,17 @@ function renderHeaders() {
   headersEl.appendChild(el('div', { class: 'th-ruler', style: `height:${RULER_H}px` }));
   for (const track of getTracks()) {
     const children = [el('span', { class: 'th-ico', text: trackIcon(track) }), el('span', { class: 'th-name', text: track.name })];
+    // ミュート（音声オフ＝映像だけ流す）。音声を持ちうる層に表示。
+    const muteBtn = el('button', {
+      class: 'th-mute' + (track.muted ? ' muted' : ''),
+      title: track.muted ? '音声オフ（クリックで解除）' : '音声をミュート（映像だけ流す）',
+      onClick: (e) => { e.stopPropagation(); const on = toggleTrackMute(track.id); muteBtn.classList.toggle('muted', on); muteBtn.textContent = on ? '🔇' : '🔊'; },
+    }, [track.muted ? '🔇' : '🔊']);
+    children.push(muteBtn);
     if (!track.base) {
       children.push(el('button', { class: 'th-del', title: 'この層を削除', onClick: (e) => { e.stopPropagation(); if (track.clips.length === 0 || confirm(`「${track.name}」を削除しますか？`)) removeTrack(track.id); } }, ['✕']));
     }
-    headersEl.appendChild(el('div', { class: `th-row th-${track.kind}`, style: `height:${TRACK_H[track.kind]}px` }, children));
+    headersEl.appendChild(el('div', { class: `th-row th-${track.kind}${track.muted ? ' is-muted' : ''}`, style: `height:${TRACK_H[track.kind]}px` }, children));
   }
 }
 
@@ -158,10 +168,31 @@ function renderClip(track, clip, P, sel) {
     children.push(el('div', { class: 'clip-label', text: (clip.text || '').split('\n')[0] || 'テロップ' }));
   } else {
     const m = mediaById(clip.mediaId);
-    const thumb = m ? getThumb(m.id) : null;
-    if (thumb) children.push(el('div', { class: 'clip-thumb', style: `background-image:url(${thumb})` }));
-    // 音声クリップ：波形を背面に描画
-    if (clip.kind === 'audio' && m) {
+    if (clip.kind === 'video' && m && m.path) {
+      // 動画：複数フレームを横に並べたフィルムストリップ（中身が一目で分かる）
+      const span = Math.max(0, clip.out - clip.in);
+      const count = Math.max(1, Math.min(16, Math.floor(width / FRAME_W)));
+      const strip = el('div', { class: 'clip-filmstrip' });
+      for (let i = 0; i < count; i++) {
+        const srcT = clip.in + ((i + 0.5) / count) * span;
+        let url = getFrame(m.id, srcT);
+        if (!url) { requestFrame(m.id, m.path, srcT); url = getThumb(m.id); } // 取得までは代表サムネ
+        strip.appendChild(el('div', { class: 'film-cell', style: url ? `background-image:url(${url})` : '' }));
+      }
+      children.push(strip);
+      // 動画の音声波形を下部に重ねる（音声を持つ素材のみ・無音カットなどの目安に）
+      if (m.hasAudio !== false) {
+        ensureWaveform(m);
+        const wh = 16;
+        const wc = el('canvas', { class: 'clip-wave clip-wave-video', width: Math.max(1, Math.round(width)), height: wh });
+        drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(120,200,255,0.85)');
+        children.push(wc);
+      }
+    } else if (clip.kind === 'image') {
+      const thumb = m ? getThumb(m.id) : null;
+      if (thumb) children.push(el('div', { class: 'clip-thumb', style: `background-image:url(${thumb})` }));
+    } else if (clip.kind === 'audio' && m) {
+      // 音声クリップ：波形を背面に描画
       ensureWaveform(m);
       const wc = el('canvas', { class: 'clip-wave', width: Math.max(1, Math.round(width)), height: 40 });
       drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(255,255,255,0.5)');
@@ -179,6 +210,12 @@ function renderClip(track, clip, P, sel) {
     'data-id': clip.id,
   }, children);
   node.addEventListener('pointerdown', (e) => startClipDrag(e, track, clip));
+  // ダブルクリック＝選択して編集パネルへフォーカス（直感的に編集を開く）
+  node.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    setSelection({ trackId: track.id, clipId: clip.id });
+    emit('edit-focus', clip.id);
+  });
   return node;
 }
 
@@ -236,6 +273,34 @@ function startRangeDrag(e) {
   setRange({ start: t0, end: t0 });
 }
 
+// トラック領域のドラッグ＝マーキー（矩形）選択。範囲ツール時は時間バンド。クリックはシーク。
+function startBodyDrag(e) {
+  e.preventDefault();
+  if (getTool() === 'range') { startRangeDrag(e); return; }
+  drag = { kind: 'marquee', startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY, moved: false };
+}
+function updateMarquee(x0, y0, x1, y1) {
+  if (!marqueeEl || !content) return;
+  const cr = content.getBoundingClientRect();
+  const left = Math.min(x0, x1) - cr.left, top = Math.min(y0, y1) - cr.top;
+  marqueeEl.hidden = false;
+  marqueeEl.style.left = left + 'px';
+  marqueeEl.style.top = top + 'px';
+  marqueeEl.style.width = Math.abs(x1 - x0) + 'px';
+  marqueeEl.style.height = Math.abs(y1 - y0) + 'px';
+}
+function hideMarquee() { if (marqueeEl) marqueeEl.hidden = true; }
+// 矩形（クライアント座標）に触れたクリップを選択
+function selectClipsInBox(x0, y0, x1, y1) {
+  const bx0 = Math.min(x0, x1), bx1 = Math.max(x0, x1), by0 = Math.min(y0, y1), by1 = Math.max(y0, y1);
+  const ids = [];
+  tracksEl.querySelectorAll('.clip').forEach((n) => {
+    const r = n.getBoundingClientRect();
+    if (r.right >= bx0 && r.left <= bx1 && r.bottom >= by0 && r.top <= by1) ids.push(n.dataset.id);
+  });
+  setMultiSelection(ids);
+}
+
 function updateRangeBand() {
   if (!rangeBandEl) return;
   const r = getRange();
@@ -277,6 +342,13 @@ function onMove(e) {
   if (!drag) return;
   const P = px();
   if (drag.kind === 'scrub') { seek(timeAtClientX(e.clientX)); return; }
+  if (drag.kind === 'marquee') {
+    drag.curX = e.clientX; drag.curY = e.clientY;
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    updateMarquee(drag.startX, drag.startY, e.clientX, e.clientY);
+    return;
+  }
   if (drag.kind === 'range') {
     const t = timeAtClientX(e.clientX);
     setRange({ start: Math.min(drag.t0, t), end: Math.max(drag.t0, t) });
@@ -358,6 +430,11 @@ function onMove(e) {
 
 function onUp() {
   if (!drag) return;
+  if (drag.kind === 'marquee') {
+    if (drag.moved) selectClipsInBox(drag.startX, drag.startY, drag.curX, drag.curY); // 矩形に触れたクリップを選択
+    else { setSelection(null); seek(timeAtClientX(drag.startX)); }                    // クリック=シーク＋選択解除
+    hideMarquee(); drag = null; return;
+  }
   playheadEl.classList.remove('scrubbing');
   if (drag.kind === 'range') { drag = null; return; } // 範囲は保持
   const wasEdit = drag.kind !== 'scrub';

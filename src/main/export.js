@@ -441,10 +441,13 @@ async function exportTimeline(payload, onProgress, registerProc) {
     filterParts.push(`[${prevV}]format=yuv420p[vout]`);
 
     // 音声トラックのクリップを base 音声へミックス
+    // ベーストラックがミュートされている場合は basea を使わず無音から始める（映像だけ流す）
+    const baseMuted = !!(payload.options && payload.options.muteBase);
     let audioOut = 'basea';
+    if (baseMuted) { filterParts.push(`${SILENCE(DUR)}[basemute]`); audioOut = 'basemute'; }
     const audioClips = payload.audioClips || [];
     if (audioClips.length) {
-      const aLabels = ['basea'];
+      const aLabels = [audioOut];
       for (let k = 0; k < audioClips.length; k++) {
         const ac = audioClips[k];
         const ms = Math.round(Math.max(0, ac.start) * 1000);
@@ -587,4 +590,81 @@ async function extractAudio(segments, duration) {
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 }
 
-module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, FFMPEG, FFPROBE };
+// 素材の音声波形ピークを FFmpeg で抽出（ファイル全体を読み込まずストリーム処理＝大きな動画でも安全）。
+// 低レート mono s16le PCM を stdout で受け取り、buckets 個の最大振幅(0..1)に集約して返す。
+function audioPeaks(filePath, buckets = 2400) {
+  return new Promise((resolve) => {
+    const PR = 8000; // 解析用サンプルレート（低くしてデータ量を抑える）
+    const args = ['-hide_banner', '-loglevel', 'error', '-vn', '-i', filePath,
+      '-ac', '1', '-ar', String(PR), '-f', 's16le', '-c:a', 'pcm_s16le', 'pipe:1'];
+    let proc;
+    try { proc = spawn(FFMPEG, args, { windowsHide: true }); } catch (e) { resolve({ ok: false, error: String(e) }); return; }
+    const chunks = []; let total = 0; let err = '';
+    proc.stdout.on('data', (d) => { chunks.push(d); total += d.length; });
+    proc.stderr.on('data', (d) => { err += d.toString(); });
+    proc.on('error', (e) => resolve({ ok: false, error: String(e) }));
+    proc.on('close', (code) => {
+      if (code !== 0 || total < 2) { resolve({ ok: false, error: err.slice(-300) || ('audio peaks failed: ' + code) }); return; }
+      const buf = Buffer.concat(chunks, total);
+      const samples = Math.floor(buf.length / 2); // s16 = 2 bytes
+      const n = Math.max(1, Math.min(buckets, samples));
+      const step = Math.max(1, Math.floor(samples / n));
+      const peaks = new Array(n);
+      for (let i = 0; i < n; i++) {
+        let m = 0; const s = i * step;
+        for (let j = 0; j < step; j++) {
+          const idx = (s + j) * 2;
+          if (idx + 1 >= buf.length) break;
+          const v = Math.abs(buf.readInt16LE(idx));
+          if (v > m) m = v;
+        }
+        peaks[i] = m / 32768;
+      }
+      const duration = samples / PR;
+      resolve({ ok: true, peaks, duration });
+    });
+  });
+}
+
+// FFmpeg silencedetect で無音区間を検出。返り値 silences: [{start,end}]（ファイル先頭基準の秒）。
+function detectSilence(filePath, { noiseDb = -30, minDur = 0.35, inSec = 0, outSec = 0 } = {}) {
+  return new Promise((resolve) => {
+    const args = ['-hide_banner', '-nostats'];
+    if (inSec > 0) args.push('-ss', String(inSec));
+    if (outSec > inSec) args.push('-to', String(outSec));
+    args.push('-i', filePath, '-vn', '-af', `silencedetect=noise=${noiseDb}dB:d=${minDur}`, '-f', 'null', '-');
+    let proc;
+    try { proc = spawn(FFMPEG, args, { windowsHide: true }); } catch (e) { resolve({ ok: false, error: String(e) }); return; }
+    let err = '';
+    proc.stdout.on('data', () => {});
+    proc.stderr.on('data', (d) => { err += d.toString(); });
+    proc.on('error', (e) => resolve({ ok: false, error: String(e) }));
+    proc.on('close', () => {
+      const silences = []; let cur = null;
+      const re = /silence_(start|end):\s*(-?[0-9.]+)/g; let mm;
+      while ((mm = re.exec(err)) !== null) {
+        const off = inSec > 0 ? inSec : 0; // -ss 指定時、報告値はトリム後の相対秒なので元時刻へ戻す
+        const t = parseFloat(mm[2]) + off;
+        if (mm[1] === 'start') cur = { start: Math.max(0, t), end: null };
+        else if (cur) { cur.end = t; silences.push(cur); cur = null; }
+      }
+      resolve({ ok: true, silences });
+    });
+  });
+}
+
+// マイク録音（base64 の webm/ogg 等）を temp に保存し、FFmpeg で wav(音声)へ変換して返す。
+async function saveRecording(base64, ext = 'webm') {
+  try {
+    if (!base64) return { ok: false, error: '録音データがありません' };
+    const tmp = path.join(os.tmpdir(), `telora-rec-${Date.now()}.${ext}`);
+    fs.writeFileSync(tmp, Buffer.from(base64, 'base64'));
+    const wav = path.join(os.tmpdir(), `telora-rec-${Date.now()}.wav`);
+    const r = await run(FFMPEG, ['-y', '-hide_banner', '-i', tmp, '-ac', '2', '-ar', '44100', '-c:a', 'pcm_s16le', wav]);
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    if (r.code === 0 && fs.existsSync(wav)) return { ok: true, path: wav };
+    return { ok: false, error: (r.stderr || '').split('\n').filter(Boolean).slice(-3).join('\n') };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+}
+
+module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, audioPeaks, detectSilence, saveRecording, FFMPEG, FFPROBE };

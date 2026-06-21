@@ -1,48 +1,26 @@
-// オーディオ波形：素材を一度デコードしてピーク列を作りキャッシュ。タイムラインのクリップに表示する。
+// オーディオ波形：FFmpeg(main)で素材のピーク列を抽出してキャッシュ。タイムラインのクリップに表示する。
+// ファイル全体を renderer に読み込まずストリーム処理するため、大きな動画でも安全（以前の OOM クラッシュを回避）。
 import { emit } from './state.js';
 
-let actx = null;
 const PEAKS = 2400; // 素材あたりのピーク数
-const cache = new Map();   // mediaId -> { peaks: Float32Array, duration }
+const cache = new Map();   // mediaId -> { peaks: number[], duration }
 const pending = new Set();
-
-function ctx() {
-  if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; actx = AC ? new AC() : null; }
-  return actx;
-}
 
 export function getWaveform(mediaId) { return cache.get(mediaId) || null; }
 
-// 素材の波形ピークを用意（非同期・一度だけ）。完了時に 'waveform' を emit。
+// 素材の波形ピークを用意（非同期・一度だけ）。完了時に 'waveform' を emit。動画・音声どちらも対応。
 export async function ensureWaveform(media) {
   if (!media || media.type === 'image') return;
   if (media.hasAudio === false) return;
   if (cache.has(media.id) || pending.has(media.id)) return;
-  if (!ctx()) return;
   pending.add(media.id);
   try {
-    const res = await window.api.readFileBuffer(media.path);
-    if (!res || !res.ok) { pending.delete(media.id); return; }
-    const bin = atob(res.base64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const buf = await ctx().decodeAudioData(bytes.buffer);
-    const ch0 = buf.getChannelData(0);
-    const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
-    const n = Math.min(PEAKS, ch0.length);
-    const peaks = new Float32Array(n);
-    const step = Math.max(1, Math.floor(ch0.length / n));
-    for (let i = 0; i < n; i++) {
-      let m = 0; const s = i * step;
-      for (let j = 0; j < step; j++) {
-        const a = Math.abs(ch0[s + j] || 0); if (a > m) m = a;
-        if (ch1) { const b = Math.abs(ch1[s + j] || 0); if (b > m) m = b; }
-      }
-      peaks[i] = m;
+    const res = await window.api.audioPeaks({ path: media.path, buckets: PEAKS });
+    if (res && res.ok && res.peaks && res.peaks.length) {
+      cache.set(media.id, { peaks: res.peaks, duration: res.duration || media.duration || 1 });
+      emit('waveform', media.id);
     }
-    cache.set(media.id, { peaks, duration: buf.duration || (ch0.length / buf.sampleRate) });
-    emit('waveform', media.id);
-  } catch (_) { /* デコード不可は無視 */ }
+  } catch (_) { /* 抽出不可は無視（無音/音声なし等） */ }
   pending.delete(media.id);
 }
 

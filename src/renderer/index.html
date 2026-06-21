@@ -12,43 +12,52 @@
     <!-- 上部ツールバー -->
     <header class="topbar">
       <div class="brand">
-        <span class="logo" title="Telora">✦</span>
+        <img class="logo-img" src="assets/logo.svg" alt="Telora" title="Telora" />
+        <span class="brand-name">Telora</span>
         <span class="proj-name" id="projName">無題のプロジェクト</span>
       </div>
       <div class="topbar-actions">
         <button class="btn" id="btnHome" title="ホームへ戻る"><span class="ico">🏠</span> ホーム</button>
         <div class="sep"></div>
-        <button class="btn" id="btnImport" title="動画・画像を読み込む (Ctrl/Cmd+I)"><span class="ico">⬇</span> 素材読込</button>
         <button class="btn" id="btnTranscribe" title="音声から文字起こししてテロップを自動生成"><span class="ico">🎙</span> 文字起こし</button>
-        <button class="btn" id="btnImportSrt" title="SRT字幕を取り込む">SRT取込</button>
-        <button class="btn" id="btnExportSrt" title="テロップをSRT字幕として書き出す">SRT書出</button>
-        <button class="btn" id="btnImportXml" title="編集データ(XML)を取り込む">XML</button>
-        <button class="btn" id="btnProxy" title="プロキシ（低解像度）でプレビューを高速化。書き出しは元素材">プロキシ</button>
+        <button class="btn" id="btnProxy" title="プロキシ（低解像度）でプレビューを高速化。書き出しは元素材"><span class="ico">⚡</span> プロキシ</button>
         <div class="sep"></div>
         <button class="btn" id="btnOpen" title="プロジェクトを開く (Ctrl/Cmd+O)">開く</button>
         <button class="btn" id="btnSave" title="プロジェクトを保存 (Ctrl/Cmd+S)">保存</button>
         <div class="sep"></div>
-        <label class="reso-label">出力
-          <select id="resoSelect" class="select">
-            <option value="1920x1080">1080p (1920×1080)</option>
-            <option value="1280x720" selected>720p (1280×720)</option>
-            <option value="854x480">480p (854×480)</option>
-            <option value="1080x1920">縦 1080×1920</option>
-            <option value="720x1280">縦 720×1280</option>
-          </select>
-        </label>
-        <select id="qualitySelect" class="select" title="画質">
-          <option value="high">高画質</option>
-          <option value="normal" selected>標準</option>
-          <option value="light">軽量</option>
-        </select>
-        <select id="formatSelect" class="select" title="形式">
-          <option value="mp4" selected>MP4</option>
-          <option value="webm">WebM</option>
-          <option value="mp3">音声(MP3)</option>
-        </select>
-        <label class="reso-label" title="ハードウェアエンコードで高速化"><input type="checkbox" id="hwCheck" /> HW</label>
-        <button class="btn" id="btnSnapshot" title="現在のフレームを画像(PNG)で保存">静止画</button>
+        <div class="popover-wrap">
+          <button class="btn" id="btnExportSettings" title="書き出し設定（解像度・画質・形式など）"><span class="ico">⚙</span> 設定 <span class="caret">▾</span></button>
+          <div class="popover" id="exportSettings" hidden>
+            <div class="popover-title">書き出し設定</div>
+            <label class="popover-row"><span>出力解像度</span>
+              <select id="resoSelect" class="select">
+                <option value="1920x1080">1080p (1920×1080)</option>
+                <option value="1280x720" selected>720p (1280×720)</option>
+                <option value="854x480">480p (854×480)</option>
+                <option value="1080x1920">縦 1080×1920</option>
+                <option value="720x1280">縦 720×1280</option>
+              </select>
+            </label>
+            <label class="popover-row"><span>画質</span>
+              <select id="qualitySelect" class="select">
+                <option value="high">高画質</option>
+                <option value="normal" selected>標準</option>
+                <option value="light">軽量</option>
+              </select>
+            </label>
+            <label class="popover-row"><span>形式</span>
+              <select id="formatSelect" class="select">
+                <option value="mp4" selected>MP4</option>
+                <option value="webm">WebM</option>
+                <option value="mp3">音声(MP3)</option>
+              </select>
+            </label>
+            <label class="popover-row toggle"><input type="checkbox" id="hwCheck" /> <span>ハードウェアエンコードで高速化</span></label>
+            <div class="popover-sep"></div>
+            <button class="btn full-btn" id="btnSnapshot" title="現在のフレームを画像(PNG)で保存"><span class="ico">📷</span> 現在のフレームを静止画保存</button>
+            <button class="btn full-btn" id="btnExportSrtMenu" title="テロップをSRT字幕として書き出す">💬 字幕(SRT)を書き出す</button>
+          </div>
+        </div>
         <button class="btn btn-primary" id="btnExport" title="動画を書き出す (Ctrl/Cmd+E)。範囲選択中は範囲のみ"><span class="ico">⤴</span> 書き出し</button>
       </div>
     </header>
@@ -56,7 +65,20 @@
     <main class="workspace">
       <!-- メディアビン -->
       <aside class="library">
-        <div class="panel-head"><span>メディア</span><button class="mini-btn" id="btnLibImport" title="素材を追加">＋</button></div>
+        <div class="panel-head">
+          <span>メディア<span class="count-badge" id="mediaCount" hidden>0</span></span>
+          <div class="head-actions">
+            <button class="mini-btn" id="btnLibView" title="表示を切り替え（一覧／グリッド）">▤</button>
+            <div class="popover-wrap">
+              <button class="mini-btn" id="btnLibImport" title="素材・字幕・編集データを読み込む">＋</button>
+              <div class="popover popover-left" id="libImportMenu" hidden>
+                <button class="popover-item" data-act="media"><span class="ico">🎬</span> 動画・画像・音声を読み込む</button>
+                <button class="popover-item" data-act="srt"><span class="ico">💬</span> 字幕(SRT)を読み込む</button>
+                <button class="popover-item" data-act="xml"><span class="ico">🗂</span> 編集データ(XML)を読み込む</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="media-list" id="mediaList"></div>
       </aside>
       <div class="col-resize" id="libResize" title="ドラッグで幅を調整"></div>
@@ -77,12 +99,14 @@
           </div>
         </div>
         <div class="transport" id="transport">
-          <button class="tp-btn" id="btnToStart" title="先頭へ">⏮</button>
-          <button class="tp-btn" id="btnBack" title="1秒戻る">«</button>
-          <button class="tp-btn tp-play" id="btnPlay" title="再生 / 一時停止 (Space)">▶</button>
-          <button class="tp-btn" id="btnFwd" title="1秒進む">»</button>
-          <button class="tp-btn" id="btnToEnd" title="末尾へ">⏭</button>
-          <div class="time-readout"><span id="curTime">00:00.00</span><span class="time-sep">/</span><span id="totalTime">00:00.00</span></div>
+          <div class="tp-center">
+            <button class="tp-btn" id="btnToStart" title="先頭へ">⏮</button>
+            <button class="tp-btn" id="btnBack" title="1秒戻る">«</button>
+            <button class="tp-btn tp-play" id="btnPlay" title="再生 / 一時停止 (Space)">▶</button>
+            <button class="tp-btn" id="btnFwd" title="1秒進む">»</button>
+            <button class="tp-btn" id="btnToEnd" title="末尾へ">⏭</button>
+            <div class="time-readout"><span id="curTime">00:00.00</span><span class="time-sep">/</span><span id="totalTime">00:00.00</span></div>
+          </div>
           <span class="kbd-hint">Space:再生 ／ ←→:コマ送り ／ S:分割 ／ A:前カット ／ D:後カット ／ Backspace:削除 ／ Alt+ドラッグ:複製</span>
         </div>
       </section>
@@ -116,6 +140,7 @@
         <div class="sep"></div>
         <button class="tool-btn" id="btnAddTrack" title="トラックを追加（動画・画像・テロップを自由に配置できます）">＋トラック</button>
         <button class="tool-btn" id="btnAddAudioLayer" title="音声トラックを追加">＋音声</button>
+        <button class="tool-btn" id="btnRecord" title="マイクで録音して再生位置の音声トラックに挿入"><span class="ico">🎤</span> 録音</button>
         <div class="sep"></div>
         <button class="tool-btn" id="btnMarker" title="再生位置にマーカーを追加/削除 (M)"><span class="ico">🚩</span> マーカー</button>
         <button class="tool-btn" id="btnGuides" title="セーフゾーン・グリッド・中央線を表示"><span class="ico">▦</span> ガイド</button>
@@ -134,6 +159,7 @@
             <div class="ruler" id="ruler"></div>
             <div class="tracks" id="tracks"></div>
             <div class="range-band" id="rangeBand" hidden></div>
+            <div class="marquee" id="marquee" hidden></div>
             <div class="playhead" id="playhead"><div class="playhead-knob"></div><div class="playhead-time" id="playheadTime">0:00</div></div>
           </div>
         </div>
@@ -156,7 +182,7 @@
   <div id="homeScreen">
     <div class="home-inner">
       <div class="home-head">
-        <span class="home-logo">✦</span>
+        <img class="home-logo-img" src="assets/logo.svg" alt="Telora" />
         <div>
           <h1 class="home-title">Telora</h1>
           <p class="home-sub">テロップ＆カット動画エディタ</p>

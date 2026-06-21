@@ -7,8 +7,10 @@ import {
   TELOP_PRESETS, TELOP_ANIMS, applyTelopPreset, getTextClips, setSelection,
 } from './state.js';
 import { splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, duplicateSelection } from './edit.js';
+import { silenceCut, fillerCut } from './cut-tools.js';
+import { toast } from './ui.js';
 
-let body, titleEl;
+let body, titleEl, inspectorEl;
 let fieldRefs = {};
 let currentClipId = null;
 
@@ -29,10 +31,29 @@ const FONT_OPTIONS = [
 export function initInspector() {
   body = document.getElementById('inspectorBody');
   titleEl = document.getElementById('inspectorTitle');
+  inspectorEl = body.closest('.inspector');
   on('selection', renderInspector);
+  on('edit-focus', focusEditField);            // ダブルクリックで編集パネルへ
   on('telop-live', syncFields);
   on('playhead', syncFields); // キーフレーム編集中はスクラブで実効値スライダーを追従
   renderInspector();
+}
+
+// 編集パネルを目立たせる短いパルス（選択時のフィードバック）
+function flashInspector() {
+  if (!inspectorEl) return;
+  inspectorEl.classList.remove('just-updated');
+  void inspectorEl.offsetWidth; // リフローでアニメをやり直す
+  inspectorEl.classList.add('just-updated');
+}
+// ダブルクリック時：パネル先頭へ戻し、主要な編集欄へフォーカス（テロップ＝本文、素材＝数値）
+function focusEditField() {
+  if (inspectorEl) inspectorEl.scrollTop = 0;
+  flashInspector();
+  const t = fieldRefs.text;
+  if (t && t.focus) { t.focus(); if (t.select) t.select(); return; }
+  const first = body.querySelector('.range-num, input[type=number]');
+  if (first && first.focus) first.focus();
 }
 
 function renderInspector() {
@@ -46,6 +67,7 @@ function renderInspector() {
     ]));
     return;
   }
+  flashInspector();
   if (sel.allTelops) return renderBulkTextInspector();
   const f = findClip(sel.clipId);
   if (!f) { setSelectionNull(); return; }
@@ -103,11 +125,11 @@ function renderMediaInspector(clip, track) {
     const setTf = (prop, v) => { if (hasKeyframes(clip)) setKeyframe(clip, localT(), { [prop]: v }); else tr[prop] = v; live(clip); };
     const e0 = eff();
     body.appendChild(el('div', { class: 'inspector-section-title', text: '位置・サイズ' }));
-    body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, e0.x, (v) => setTf('x', v), pct, 'tx'));
-    body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, e0.y, (v) => setTf('y', v), pct, 'ty'));
-    body.appendChild(rangeField('拡大率', 0.1, 2, 0.01, e0.scale, (v) => setTf('scale', v), pct, 'tscale'));
-    body.appendChild(rangeField('回転 (°)', -180, 180, 1, e0.rotation || 0, (v) => setTf('rotation', v), (v) => `${Math.round(v)}°`, 'trot'));
-    body.appendChild(rangeField('不透明度', 0, 1, 0.01, e0.opacity != null ? e0.opacity : 1, (v) => setTf('opacity', v), pct, 'topacity'));
+    body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, e0.x, (v) => setTf('x', v), pct, 'tx', PCT));
+    body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, e0.y, (v) => setTf('y', v), pct, 'ty', PCT));
+    body.appendChild(rangeField('拡大率', 0.1, 2, 0.01, e0.scale, (v) => setTf('scale', v), pct, 'tscale', PCT));
+    body.appendChild(rangeField('回転 (°)', -180, 180, 1, e0.rotation || 0, (v) => setTf('rotation', v), (v) => `${Math.round(v)}°`, 'trot', { scale: 1, dec: 0, suffix: '°', step: 1 }));
+    body.appendChild(rangeField('不透明度', 0, 1, 0.01, e0.opacity != null ? e0.opacity : 1, (v) => setTf('opacity', v), pct, 'topacity', PCT));
     // キーフレーム（アニメーション）
     const kfCount = (tr.keyframes || []).length;
     body.appendChild(el('div', { class: 'inspector-section-title', text: `キーフレーム${kfCount ? `（${kfCount}）` : ''}` }));
@@ -136,6 +158,11 @@ function renderMediaInspector(clip, track) {
   // フェード（映像・音声共通）
   appendFadeFields(clip);
 
+  // カット支援（動画/音声で音声を持つ素材のみ）：無音カット・フィラーカット
+  if ((clip.kind === 'video' || clip.kind === 'audio') && m && m.hasAudio !== false) {
+    appendCutAssist(clip);
+  }
+
   // 操作
   body.appendChild(el('div', { class: 'inspector-section-title', text: '操作' }));
   body.appendChild(el('div', { class: 'btn-col' }, [
@@ -145,6 +172,28 @@ function renderMediaInspector(clip, track) {
     el('button', { class: 'btn full-btn', onClick: () => cutAfter() }, ['⟖ 再生位置より後ろをカット']),
   ]));
   body.appendChild(el('button', { class: 'danger-btn', style: 'margin-top:8px', onClick: () => deleteSelection() }, ['このクリップを削除']));
+}
+
+// カット支援：無音カット／フィラーカット（音声を持つ動画・音声クリップ向け）
+function appendCutAssist(clip) {
+  body.appendChild(el('div', { class: 'inspector-section-title', text: 'カット支援' }));
+  const silenceBtn = el('button', { class: 'btn full-btn' }, ['🔇 無音をカット']);
+  silenceBtn.onclick = async () => {
+    silenceBtn.disabled = true; const t0 = silenceBtn.textContent; silenceBtn.textContent = '解析中…';
+    try { await silenceCut(clip.id); renderInspector(); }
+    finally { silenceBtn.disabled = false; silenceBtn.textContent = t0; }
+  };
+  const fillerBtn = el('button', { class: 'btn full-btn', style: 'margin-top:6px' }, ['🗣 フィラー語をカット']);
+  fillerBtn.onclick = async () => {
+    fillerBtn.disabled = true; const t0 = fillerBtn.textContent;
+    try {
+      const res = await fillerCut(clip.id, (msg) => { fillerBtn.textContent = msg; });
+      if (res && res.needSetup) toast('フィラーカットには文字起こしエンジン(Whisper)が必要です', 'err');
+      else if (res && res.ok) renderInspector();
+    } finally { fillerBtn.disabled = false; fillerBtn.textContent = t0; }
+  };
+  body.appendChild(el('div', { class: 'btn-col' }, [silenceBtn, fillerBtn]));
+  body.appendChild(el('div', { class: 'hint-text', text: '無音や「えー/あの」などの言いよどみを自動で取り除き、テンポを整えます。' }));
 }
 
 // フェードイン/アウト（秒）スライダー。映像・音声・テロップ共通。
@@ -159,6 +208,7 @@ function appendFadeFields(clip) {
 
 function infoRow(k, v) { return el('div', { class: 'clip-info-row' }, [el('span', { text: k }), el('span', { text: v })]); }
 function pct(v) { return `${Math.round(v * 100)}%`; }
+const PCT = { scale: 100, dec: 0, suffix: '%', step: 1 };   // 数値入力（％）
 function numberInput(value, onChange) {
   const inp = el('input', { type: 'number', step: '0.1', min: '0', value: (+value).toFixed(1) });
   inp.dataset.last = (+value).toFixed(1);
@@ -201,9 +251,9 @@ function renderTextInspector(tp) {
   fontSel.addEventListener('change', () => { tp.fontFamily = fontSel.value; live(tp); });
   body.appendChild(field('フォント', fontSel));
 
-  body.appendChild(rangeField('文字サイズ', 0.03, 0.25, 0.005, tp.size, (v) => { tp.size = v; live(tp); }, pct, 'size'));
+  body.appendChild(rangeField('文字サイズ', 0.03, 0.25, 0.005, tp.size, (v) => { tp.size = v; live(tp); }, pct, 'size', PCT));
   if (tp.opacity == null) tp.opacity = 1;
-  body.appendChild(rangeField('不透明度', 0, 1, 0.01, tp.opacity, (v) => { tp.opacity = v; live(tp); }, pct, 'topacity'));
+  body.appendChild(rangeField('不透明度', 0, 1, 0.01, tp.opacity, (v) => { tp.opacity = v; live(tp); }, pct, 'topacity', PCT));
 
   const boldBtn = styleToggle('B', tp.bold, () => { tp.bold = !tp.bold; live(tp); refreshToggle(boldBtn, tp.bold); });
   boldBtn.style.fontWeight = '800';
@@ -226,8 +276,8 @@ function renderTextInspector(tp) {
   body.appendChild(field('整列', alignGroup));
 
   body.appendChild(el('div', { class: 'inspector-section-title', text: '位置' }));
-  body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, tp.x, (v) => { tp.x = v; live(tp); }, pct, 'x'));
-  body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, tp.y, (v) => { tp.y = v; live(tp); }, pct, 'y'));
+  body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, tp.x, (v) => { tp.x = v; live(tp); }, pct, 'x', PCT));
+  body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, tp.y, (v) => { tp.y = v; live(tp); }, pct, 'y', PCT));
 
   body.appendChild(el('div', { class: 'inspector-section-title', text: '背景' }));
   const bgChk = checkbox(tp.bg, (v) => { tp.bg = v; live(tp); });
@@ -296,12 +346,14 @@ function renderBulkTextInspector() {
   ]));
   // 統一サイズ
   body.appendChild(rangeField('全テロップを同じサイズに', 0.03, 0.25, 0.005, clips[0].size || 0.08,
-    (v) => bulkApply((c) => { c.size = v; }), (v) => `${Math.round(v * 100)}%`));
+    (v) => bulkApply((c) => { c.size = v; }), pct, null, PCT));
 
   // 位置・色
   body.appendChild(el('div', { class: 'inspector-section-title', text: '位置・色（全体）' }));
+  body.appendChild(rangeField('左右 (X)', 0, 1, 0.01, clips[0].x != null ? clips[0].x : 0.5,
+    (v) => bulkApply((c) => { c.x = v; }), pct, null, PCT));
   body.appendChild(rangeField('上下 (Y)', 0, 1, 0.01, clips[0].y != null ? clips[0].y : 0.88,
-    (v) => bulkApply((c) => { c.y = v; }), (v) => `${Math.round(v * 100)}%`));
+    (v) => bulkApply((c) => { c.y = v; }), pct, null, PCT));
   const colorIn = el('input', { type: 'color', value: clips[0].color || '#ffffff' });
   colorIn.addEventListener('input', () => bulkApply((c) => { c.color = colorIn.value; }));
   body.appendChild(field('文字色', colorIn));
@@ -371,18 +423,39 @@ function colorInput(value, onChange) {
   c.addEventListener('input', () => onChange(c.value));
   return c;
 }
-function rangeField(label, min, max, step, value, onChange, fmt, refKey) {
+// num={scale,dec,suffix,step} を渡すと右側が数値入力（表示=value*scale）になり、キーボードで直接編集できる
+function rangeField(label, min, max, step, value, onChange, fmt, refKey, num) {
   const range = el('input', { type: 'range', min, max, step, value });
-  const valLabel = el('span', { class: 'range-val', text: fmt(value) });
   bindHistory(range);
-  range.addEventListener('input', () => { const v = parseFloat(range.value); valLabel.textContent = fmt(v); onChange(v); });
-  const wrap = el('div', { class: 'field' }, [el('label', { text: label }), el('div', { class: 'range-row' }, [range, valLabel])]);
-  if (refKey) fieldRefs[refKey] = { range, valLabel };
+  let valEl, wrapRight;
+  const disp = (v) => (v * num.scale).toFixed(num.dec || 0);
+  if (num) {
+    valEl = el('input', { type: 'number', class: 'range-num', step: num.step != null ? num.step : 1, value: disp(value) });
+    bindHistory(valEl);
+    const commit = () => {
+      const n = parseFloat(valEl.value);
+      if (!isFinite(n)) { valEl.value = disp(parseFloat(range.value)); return; }
+      const v = clamp(n / num.scale, min, max);
+      range.value = v; valEl.value = disp(v); onChange(v);
+    };
+    valEl.addEventListener('change', commit);
+    range.addEventListener('input', () => { const v = parseFloat(range.value); valEl.value = disp(v); onChange(v); });
+    wrapRight = num.suffix ? el('div', { class: 'range-numwrap' }, [valEl, el('span', { class: 'range-suffix', text: num.suffix })]) : valEl;
+  } else {
+    valEl = el('span', { class: 'range-val', text: fmt(value) });
+    range.addEventListener('input', () => { const v = parseFloat(range.value); valEl.textContent = fmt(v); onChange(v); });
+    wrapRight = valEl;
+  }
+  const wrap = el('div', { class: 'field' }, [el('label', { text: label }), el('div', { class: 'range-row' }, [range, wrapRight])]);
+  if (refKey) fieldRefs[refKey] = { range, valLabel: valEl, num };
   return wrap;
 }
 function setRange(ref, value, fmt) {
-  if (!ref || !ref.range || document.activeElement === ref.range) return;
-  ref.range.value = value; ref.valLabel.textContent = fmt(value);
+  if (!ref || !ref.range) return;
+  if (document.activeElement === ref.range || document.activeElement === ref.valLabel) return;
+  ref.range.value = value;
+  if (ref.num) ref.valLabel.value = (value * ref.num.scale).toFixed(ref.num.dec || 0);
+  else ref.valLabel.textContent = fmt(value);
 }
 function styleToggle(label, active, onClick) { return el('button', { class: active ? 'active' : '', onClick: () => { captureHistory(); onClick(); } }, [label]); }
 function refreshToggle(btn, active) { btn.classList.toggle('active', active); }

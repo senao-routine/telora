@@ -154,17 +154,17 @@ export async function runExport() {
         const m = mediaById(clip.mediaId);
         if (!m || clipDur(clip) <= 0.02) continue;
         for (const seg of expandClipForExport(clip, m, W, H, clip.kind)) videoClips.push(seg);
-        // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ・transform非依存なので1本）
-        if (m.hasAudio !== false) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+        // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ・transform非依存なので1本）。ミュート層は除外。
+        if (m.hasAudio !== false && !track.muted) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       }
     }
     if (videoClips.length) layers.push({ kind: 'video', clips: videoClips });
     for (const p of pngs) layers.push(p);
   }
 
-  // 音声トラックのクリップ（BGM・ナレーション等）
+  // 音声トラックのクリップ（BGM・ナレーション等）。ミュート層は除外。
   for (const track of project.tracks) {
-    if (track.kind !== 'audio') continue;
+    if (track.kind !== 'audio' || track.muted) continue;
     for (const clip of track.clips) {
       const m = mediaById(clip.mediaId);
       if (!m || clipDur(clip) <= 0.02) continue;
@@ -178,7 +178,8 @@ export async function runExport() {
     return;
   }
 
-  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: dlg.filePath, options: { format, quality, hwaccel, range } };
+  const muteBase = !!(base && base.muted); // ベース層がミュートなら映像のみ書き出し
+  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: dlg.filePath, options: { format, quality, hwaccel, range, muteBase } };
 
   if (unsubProgress) unsubProgress();
   unsubProgress = window.api.onExportProgress(({ ratio, message }) => setProgress(ratio, message));

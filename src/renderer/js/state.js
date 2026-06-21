@@ -447,6 +447,17 @@ export function removeTrack(id) {
   return true;
 }
 
+// トラックの音声ミュート切替（映像だけ流す）。返り値は新しい muted 状態。
+export function toggleTrackMute(id) {
+  const tr = state.project.tracks.find((t) => t.id === id);
+  if (!tr) return false;
+  pushHistory();
+  tr.muted = !tr.muted;
+  markDirty();
+  emit('project');
+  return !!tr.muted;
+}
+
 // ---- マーカー ----
 export function getMarkers() { return state.project.markers || (state.project.markers = []); }
 export function toggleMarkerAtPlayhead() {

@@ -1,0 +1,24 @@
+<svg width="132" height="104" viewBox="0 0 132 104" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="emCard" x1="30" y1="30" x2="102" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a3045"/>
+      <stop offset="1" stop-color="#20243200"/>
+    </linearGradient>
+    <linearGradient id="emPlay" x1="52" y1="40" x2="84" y2="72" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6f9bff"/>
+      <stop offset="1" stop-color="#8a7bff"/>
+    </linearGradient>
+  </defs>
+  <!-- 後ろのカード（傾き） -->
+  <rect x="22" y="30" width="74" height="50" rx="9" transform="rotate(-9 22 30)" fill="#1b1f2b" stroke="#3a3f52" stroke-width="2"/>
+  <!-- 中間のカード -->
+  <rect x="34" y="26" width="74" height="50" rx="9" transform="rotate(-3 34 26)" fill="#222736" stroke="#454b63" stroke-width="2"/>
+  <!-- 手前のカード -->
+  <rect x="40" y="30" width="76" height="52" rx="10" fill="#232a3b" stroke="#5b6685" stroke-width="2"/>
+  <!-- 再生トライアングル -->
+  <circle cx="78" cy="56" r="17" fill="url(#emPlay)" opacity="0.16"/>
+  <path d="M72 48 L88 56 L72 64 Z" fill="url(#emPlay)"/>
+  <!-- きらめき -->
+  <path d="M104 24 l1.6 4.4 4.4 1.6 -4.4 1.6 -1.6 4.4 -1.6 -4.4 -4.4 -1.6 4.4 -1.6 Z" fill="#8a7bff" opacity="0.85"/>
+  <circle cx="30" cy="20" r="2.2" fill="#5b8cff" opacity="0.7"/>
+</svg>

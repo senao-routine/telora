@@ -131,7 +131,9 @@ function syncBaseVideo(t, shouldPlay) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
     } else { pendingSeek = true; }
-    try { video.volume = clipFadeAlpha(base.clip, t); } catch (_) {} // ベース動画音声のフェード
+    // ベース層がミュートなら映像のみ（音声を止める）。それ以外はフェードに追従。
+    const baseMuted = !!(base.track && base.track.muted);
+    try { video.muted = baseMuted; video.volume = baseMuted ? 0 : clipFadeAlpha(base.clip, t); } catch (_) {}
     if (shouldPlay) { if (video.paused) safePlay(); } else if (!video.paused) video.pause();
   } else {
     if (!video.paused) video.pause();
@@ -147,7 +149,7 @@ function safePlay() {
 function syncAudioClips(t, shouldPlay) {
   const activeIds = new Set();
   for (const track of getProject().tracks) {
-    if (track.kind !== 'audio') continue;
+    if (track.kind !== 'audio' || track.muted) continue;
     for (const c of track.clips) {
       if (!shouldPlay) continue;
       if (t < c.start - 1e-6 || t >= clipEnd(c) - 1e-6) continue;

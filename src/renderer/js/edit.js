@@ -214,8 +214,17 @@ function placeBumped(p, c, srcTrackId, start, dur) {
   if (c.kind === 'audio') {
     const audios = p.tracks.filter((t) => t.kind === 'audio');
     const src = p.tracks.find((t) => t.id === srcTrackId && t.kind === 'audio');
-    let track = (src && slotFree(src, start, dur)) ? src : (audios.find((t) => slotFree(t, start, dur)) || null);
-    if (!track) { track = { id: uid('trk'), kind: 'audio', name: 'A' + (audios.length + 1), clips: [] }; p.tracks.push(track); }
+    // 動画と同様：元トラックが埋まっていれば隣接する上の音声トラックへ繰り上げ、無ければ新階層を作る
+    let track = (src && slotFree(src, start, dur)) ? src : null;
+    if (!track) {
+      const startIdx = src ? p.tracks.indexOf(src) : p.tracks.length;
+      for (let i = startIdx - 1; i >= 0; i--) { const t = p.tracks[i]; if (t.kind === 'audio' && slotFree(t, start, dur)) { track = t; break; } }
+    }
+    if (!track) {
+      track = { id: uid('trk'), kind: 'audio', name: 'A' + (audios.length + 1), clips: [] };
+      const firstAudioIdx = p.tracks.findIndex((t) => t.kind === 'audio'); // 音声グループの先頭へ＝映像のすぐ下に新階層
+      if (firstAudioIdx >= 0) p.tracks.splice(firstAudioIdx, 0, track); else p.tracks.push(track);
+    }
     track.clips.push(c); track.clips.sort((a, b) => a.start - b.start);
     return track;
   }

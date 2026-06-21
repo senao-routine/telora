@@ -173,4 +173,72 @@ async function transcribe(payload, onProgress) {
   }
 }
 
-module.exports = { transcribe, detectEngine, cancel };
+// ---- 単語タイムスタンプ付き文字起こし（フィラーカット用）----
+// テロップ用の transcribe とは別経路。word 単位の {word,start,end}（秒）を返す。
+function runWhisperWords(engine, wav, lang, tmpDir, registerProc) {
+  return new Promise((resolve) => {
+    let args; let outJson;
+    if (engine.type === 'openai') {
+      const model = process.env.WHISPER_OPENAI_MODEL || 'small';
+      args = [wav, '--model', model, '--language', lang || 'Japanese', '--task', 'transcribe',
+        '--output_format', 'json', '--word_timestamps', 'True', '--output_dir', tmpDir, '--verbose', 'False', '--fp16', 'False'];
+      outJson = path.join(tmpDir, path.basename(wav, path.extname(wav)) + '.json');
+    } else {
+      const of = path.join(tmpDir, 'words');
+      args = ['-m', engine.model, '-f', wav, '-l', lang || 'ja', '-oj', '-ml', '1', '-of', of, '-np'];
+      outJson = of + '.json';
+    }
+    let proc; let err = '';
+    try { proc = spawn(engine.bin, args, { env: SPAWN_ENV, windowsHide: true }); }
+    catch (e) { resolve({ ok: false, error: String(e) }); return; }
+    if (registerProc) registerProc(proc);
+    proc.stdout.on('data', (d) => { err += d.toString(); });
+    proc.stderr.on('data', (d) => { err += d.toString(); });
+    proc.on('error', (e) => resolve({ ok: false, error: String(e) }));
+    proc.on('close', (code) => {
+      if (code !== 0) { resolve({ ok: false, error: err.slice(-500) }); return; }
+      try {
+        const j = JSON.parse(fs.readFileSync(outJson, 'utf8'));
+        const words = [];
+        if (Array.isArray(j.segments)) {
+          // openai-whisper 形式: segments[].words[{word,start,end}]
+          for (const s of j.segments) for (const w of (s.words || [])) {
+            if (w && w.word != null && w.start != null && w.end != null) words.push({ word: String(w.word), start: +w.start, end: +w.end });
+          }
+        }
+        if (!words.length && Array.isArray(j.transcription)) {
+          // whisper.cpp 形式: transcription[].offsets.{from,to}(ms), text
+          for (const t of j.transcription) {
+            const o = t.offsets || {};
+            if (o.from != null && o.to != null) words.push({ word: String(t.text || ''), start: o.from / 1000, end: o.to / 1000 });
+          }
+        }
+        resolve({ ok: true, words });
+      } catch (e) { resolve({ ok: false, error: '単語JSONの解析に失敗しました: ' + String(e) }); }
+    });
+  });
+}
+
+async function transcribeWords(payload, onProgress) {
+  const { mediaPath, language } = payload || {};
+  if (!mediaPath) return { ok: false, error: '対象の音声/動画がありません' };
+  const engine = await detectEngine();
+  if (!engine) return { ok: false, error: SETUP_MSG, needSetup: true };
+  if (engine.type === 'cpp-nomodel') return { ok: false, needSetup: true, error: 'whisper.cpp のモデルがありません。' };
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tce-words-'));
+  const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {} };
+  try {
+    if (onProgress) onProgress(0.1, '音声を抽出しています…');
+    const wav = path.join(tmpDir, 'audio.wav');
+    const conv = await ffmpegToWav(mediaPath, wav);
+    if (!conv.ok) { cleanup(); return { ok: false, error: '音声抽出に失敗しました: ' + conv.error }; }
+    if (onProgress) onProgress(0.3, 'フィラー語を解析しています…');
+    const res = await runWhisperWords(engine, wav, language, tmpDir, (p) => { currentProc = p; });
+    currentProc = null; cleanup();
+    if (!res.ok) return { ok: false, error: res.error };
+    if (onProgress) onProgress(1, '完了');
+    return { ok: true, words: res.words, engine: engine.type };
+  } catch (e) { cleanup(); return { ok: false, error: String(e && e.stack || e) }; }
+}
+
+module.exports = { transcribe, transcribeWords, detectEngine, cancel };

@@ -1,0 +1,21 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="teloraGrad" x1="6" y1="6" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6f9bff"/>
+      <stop offset="0.55" stop-color="#5b8cff"/>
+      <stop offset="1" stop-color="#8a7bff"/>
+    </linearGradient>
+    <linearGradient id="teloraSheen" x1="10" y1="8" x2="32" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- 角丸のアプリアイコン地（グラデーション） -->
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#teloraGrad)"/>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#teloraSheen)"/>
+  <!-- 再生トライアングル（動画） -->
+  <path d="M26 18.5 L45.5 30 L26 41.5 Z" fill="#ffffff" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
+  <!-- テロップ（字幕）バー2本 -->
+  <rect x="18" y="47" width="28" height="4.4" rx="2.2" fill="#ffffff" fill-opacity="0.95"/>
+  <rect x="18" y="54" width="17" height="4.4" rx="2.2" fill="#ffffff" fill-opacity="0.7"/>
+</svg>

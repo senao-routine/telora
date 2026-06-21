@@ -3,8 +3,8 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio } = require('./export');
-const { transcribe, detectEngine, cancel: cancelTranscribe } = require('./transcribe');
+const { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, audioPeaks, detectSilence, saveRecording } = require('./export');
+const { transcribe, transcribeWords, detectEngine, cancel: cancelTranscribe } = require('./transcribe');
 
 app.setName('Telora'); // メニュー等のアプリ名
 
@@ -161,6 +161,18 @@ ipcMain.handle('extract-audio', async (_e, { segments, duration } = {}) => {
   return await extractAudio(segments, duration);
 });
 
+ipcMain.handle('audio-peaks', async (_e, { path: p, buckets } = {}) => {
+  return await audioPeaks(p, buckets);
+});
+
+ipcMain.handle('detect-silence', async (_e, { path: p, noiseDb, minDur, inSec, outSec } = {}) => {
+  return await detectSilence(p, { noiseDb, minDur, inSec, outSec });
+});
+
+ipcMain.handle('save-recording', async (_e, { base64, ext } = {}) => {
+  return await saveRecording(base64, ext);
+});
+
 ipcMain.handle('detect-stt', async () => {
   const e = await detectEngine();
   return { available: !!e && e.type !== 'cpp-nomodel', engine: e ? e.type : null };
@@ -171,6 +183,13 @@ ipcMain.handle('transcribe', async (event, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) event.sender.send('transcribe-progress', { ratio, message });
   };
   return await transcribe(payload, onProgress);
+});
+
+ipcMain.handle('transcribe-words', async (event, payload) => {
+  const onProgress = (ratio, message) => {
+    if (mainWindow && !mainWindow.isDestroyed()) event.sender.send('transcribe-progress', { ratio, message });
+  };
+  return await transcribeWords(payload, onProgress);
 });
 
 ipcMain.handle('cancel-transcribe', async () => ({ ok: cancelTranscribe() }));

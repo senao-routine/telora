@@ -163,6 +163,7 @@ export async function importMedia(paths, { addToTimeline = true } = {}) {
   renderMediaBin();
   if (added.length) toast(`${added.length} 件の素材を読み込みました`, 'ok');
   if (skipped) toast(`${skipped} 件は対応していない形式のためスキップしました`, 'err');
+  return added;
 }
 
 // [start, start+dur) がトラック上で空いているか
@@ -259,11 +260,16 @@ export function renderMediaBin() {
   const project = getProject();
   list.innerHTML = '';
 
+  const countEl = document.getElementById('mediaCount');
+  if (countEl) { countEl.textContent = String(project.media.length); countEl.hidden = project.media.length === 0; }
+
   if (project.media.length === 0) {
+    const ill = el('img', { class: 'empty-illust', src: 'assets/empty-media.svg', alt: '' });
     list.appendChild(el('div', { class: 'empty-hint', id: 'libEmpty' }, [
-      el('p', { text: '素材がありません' }),
-      el('button', { class: 'btn', onClick: pickAndImport }, ['素材を読み込む']),
-      el('p', { class: 'dim', text: '動画・画像をここにドラッグ＆ドロップ' }),
+      ill,
+      el('p', { text: 'まだ素材がありません' }),
+      el('button', { class: 'btn btn-primary', onClick: pickAndImport }, ['＋ 素材を読み込む']),
+      el('p', { class: 'dim', text: '動画・画像・音声をここにドラッグ＆ドロップ' }),
     ]));
     return;
   }

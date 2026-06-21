@@ -13,6 +13,7 @@ import { importSrtFromFile, exportSrt } from './import-srt.js';
 import { importXmlFromFile } from './import-xml.js';
 import { runTranscribe } from './transcribe-ui.js';
 import { toggleProxy, proxyEnabled } from './proxy.js';
+import { toggleRecording, setRecorderListener } from './recorder.js';
 import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
@@ -38,6 +39,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   wireTimelineResize();
   wirePanelResize();
   wireHome();
+  applyLibView();
+  // ポップオーバーの外側クリック / Esc で閉じる
+  window.addEventListener('click', () => closeAllPopovers());
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllPopovers(); }, true);
 
   on('dirty', updateTitle);
   on('project', updateTitle);
@@ -100,18 +105,32 @@ function wireHome() {
 }
 
 function wireTopbar() {
-  $('btnImport').onclick = pickAndImport;
-  $('btnLibImport').onclick = pickAndImport;
   $('btnTranscribe').onclick = () => runTranscribe();
-  $('btnImportSrt').onclick = () => importSrtFromFile();
-  $('btnExportSrt').onclick = () => exportSrt();
-  $('btnImportXml').onclick = () => importXmlFromFile();
   $('btnProxy').onclick = async () => { const on = await toggleProxy(); $('btnProxy').classList.toggle('active', on); };
   $('btnProxy').classList.toggle('active', proxyEnabled());
   $('btnOpen').onclick = () => openProject();
   $('btnSave').onclick = () => saveProject();
   $('btnExport').onclick = () => runExport();
+
+  // 書き出し設定ポップオーバー（解像度・画質・形式・HW・静止画・SRT書き出しをまとめて整理）
+  setupPopover('btnExportSettings', 'exportSettings');
+  $('btnExportSrtMenu').onclick = () => { closeAllPopovers(); exportSrt(); };
+
+  // メディア「＋」＝読み込みメニュー（素材／字幕SRT／編集XML を1か所に集約）
+  setupPopover('btnLibImport', 'libImportMenu');
+  $('libImportMenu').querySelectorAll('.popover-item').forEach((b) => {
+    b.onclick = () => {
+      closeAllPopovers();
+      const act = b.dataset.act;
+      if (act === 'media') pickAndImport();
+      else if (act === 'srt') importSrtFromFile();
+      else if (act === 'xml') importXmlFromFile();
+    };
+  });
+  $('btnLibView').onclick = () => toggleLibView();
+
   $('btnSnapshot').onclick = async () => {
+    closeAllPopovers();
     const cv = document.getElementById('overlay');
     if (!cv) return;
     const dataUrl = cv.toDataURL('image/png');
@@ -127,6 +146,53 @@ function wireTopbar() {
     noteDirty(); emit('settings'); emit('project');
   });
 }
+
+// ---- ポップオーバー（書き出し設定・読み込みメニュー） ----
+function closeAllPopovers() {
+  document.querySelectorAll('.popover:not([hidden])').forEach((p) => { p.hidden = true; });
+  document.querySelectorAll('.popover-wrap .open').forEach((b) => b.classList.remove('open'));
+}
+function setupPopover(btnId, popId) {
+  const btn = $(btnId), pop = document.getElementById(popId);
+  if (!btn || !pop) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const willOpen = pop.hidden;
+    closeAllPopovers();
+    pop.hidden = !willOpen;
+    btn.classList.toggle('open', willOpen);
+  });
+  pop.addEventListener('click', (e) => e.stopPropagation()); // 内部クリックで閉じない
+}
+// メディア一覧の表示モード：一覧 → グリッド小 → グリッド大 を循環。
+// アイコンは現在のモード（中身フレームが並ぶ様子）を示すグリフで表す。
+const LIB_VIEWS = ['list', 'grid', 'grid-lg'];
+const LIB_VIEW_META = {
+  list:    { cls: '',             ico: '☰',  title: '表示: 一覧（クリックでグリッド小）' },
+  grid:    { cls: 'view-grid',    ico: '▦',  title: '表示: グリッド小（クリックでグリッド大）' },
+  'grid-lg': { cls: 'view-grid-lg', ico: '▣', title: '表示: グリッド大（クリックで一覧）' },
+};
+function getLibView() {
+  let v = 'list';
+  try { v = localStorage.getItem('tce.libView') || 'list'; } catch (_) {}
+  return LIB_VIEWS.includes(v) ? v : 'list'; // 旧値(compact等)は list 扱い
+}
+function setLibView(v) {
+  if (!LIB_VIEWS.includes(v)) v = 'list';
+  const list = document.getElementById('mediaList');
+  if (list) {
+    LIB_VIEWS.forEach((m) => { const c = LIB_VIEW_META[m].cls; if (c) list.classList.remove(c); });
+    const cls = LIB_VIEW_META[v].cls; if (cls) list.classList.add(cls);
+  }
+  const b = $('btnLibView'); if (b) { b.textContent = LIB_VIEW_META[v].ico; b.title = LIB_VIEW_META[v].title; }
+  try { localStorage.setItem('tce.libView', v); } catch (_) {}
+}
+function toggleLibView() {
+  const cur = getLibView();
+  const next = LIB_VIEWS[(LIB_VIEWS.indexOf(cur) + 1) % LIB_VIEWS.length];
+  setLibView(next);
+}
+function applyLibView() { setLibView(getLibView()); }
 
 function syncResoSelect() {
   const s = getProject().settings;
@@ -165,6 +231,14 @@ function wireTimelineToolbar() {
   $('btnCrossfade').onclick = () => applyCrossfade();
   $('btnAddTrack').onclick = () => { addTrack('visual'); toast('トラックを追加しました（動画・画像・テロップを自由に配置できます）'); };
   $('btnAddAudioLayer').onclick = () => { addTrack('audio'); toast('音声トラックを追加しました'); };
+  // マイク録音（押すたびに開始/停止）。状態に応じてボタン表示を更新。
+  const recBtn = $('btnRecord');
+  setRecorderListener((st, extra) => {
+    if (st === 'recording') { recBtn.classList.add('recording'); const s = Math.floor((extra && extra.seconds) || 0); recBtn.innerHTML = `<span class="ico">■</span> 停止 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+    else if (st === 'saving') { recBtn.classList.remove('recording'); recBtn.innerHTML = '<span class="ico">⏳</span> 保存中…'; }
+    else { recBtn.classList.remove('recording'); recBtn.innerHTML = '<span class="ico">🎤</span> 録音'; }
+  });
+  recBtn.onclick = () => toggleRecording();
   $('btnMarker').onclick = () => { toggleMarkerAtPlayhead(); };
   $('btnGuides').onclick = () => { const on = toggleGuides(); $('btnGuides').classList.toggle('active', on); };
   $('btnGuides').classList.toggle('active', getGuides());
