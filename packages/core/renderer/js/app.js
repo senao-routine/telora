@@ -40,6 +40,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   wirePanelResize();
   wireHome();
   applyLibView();
+  // モデル②: MCP ブリッジを起動（外部AIエージェントの操作を EditCommands へ橋渡し）
+  if (window.api && window.api.model === 'mcp') {
+    import('./mcp-bridge.js').then((m) => m.initMcpBridge()).catch((e) => console.log('[mcp-bridge] load failed', e));
+  }
   // ポップオーバーの外側クリック / Esc で閉じる
   window.addEventListener('click', () => closeAllPopovers());
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllPopovers(); }, true);

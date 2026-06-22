@@ -1,0 +1,140 @@
+'use strict';
+// ローカル MCP サーバ（モデル②）。127.0.0.1 限定の HTTP で JSON-RPC(MCP) を受け、
+// 各ツールを renderer の EditCommands へ IPC で橋渡しして実行する。
+// AIモデルはユーザー側エージェント（Claude Code / Cursor 等）任せ＝本体は無料/オフライン維持。
+const http = require('http');
+const { ipcMain } = require('electron');
+
+const HOST = '127.0.0.1';
+const PORT = Number(process.env.TELORA_MCP_PORT) || 19790;
+
+// MCPツール定義: name（MCP公開名）→ cmd（EditCommands コマンド名）+ JSON Schema。
+const TOOLS = [
+  { name: 'get_timeline', cmd: 'getTimeline', description: 'タイムライン全体（トラック・クリップ・再生位置・総尺）を取得する。編集前にまず呼ぶ。', schema: { type: 'object', properties: {} } },
+  { name: 'get_transcript', cmd: 'getTranscript', description: 'テロップ（字幕）の一覧（id/開始/終了/本文）を取得する。', schema: { type: 'object', properties: { clipId: { type: 'string' } } } },
+  { name: 'select_clip', cmd: 'selectClip', description: 'クリップを選択する（add_crossfade 等の前に使う）。', schema: { type: 'object', properties: { trackId: { type: 'string' }, clipId: { type: 'string' } }, required: ['clipId'] } },
+  { name: 'split_clip', cmd: 'splitAt', description: '指定時刻（秒）でクリップを分割する。', schema: { type: 'object', properties: { time: { type: 'number' } }, required: ['time'] } },
+  { name: 'cut_before', cmd: 'cutBefore', description: '指定時刻より前を切り取る（time 省略時は現在の再生位置）。', schema: { type: 'object', properties: { time: { type: 'number' } } } },
+  { name: 'cut_after', cmd: 'cutAfter', description: '指定時刻より後ろを切り取る（time 省略時は現在の再生位置）。', schema: { type: 'object', properties: { time: { type: 'number' } } } },
+  { name: 'delete_clip', cmd: 'deleteClip', description: 'クリップを削除する。', schema: { type: 'object', properties: { clipId: { type: 'string' } }, required: ['clipId'] } },
+  { name: 'move_clip', cmd: 'moveClip', description: 'クリップを指定開始時刻（秒・任意で別トラック）へ移動する。', schema: { type: 'object', properties: { clipId: { type: 'string' }, start: { type: 'number' }, trackId: { type: 'string' } }, required: ['clipId', 'start'] } },
+  { name: 'add_telop', cmd: 'addTelop', description: 'テロップ（字幕）を指定時間に追加する。style で位置/サイズ等を上書き可。', schema: { type: 'object', properties: { text: { type: 'string' }, start: { type: 'number' }, end: { type: 'number' }, style: { type: 'object' } }, required: ['text'] } },
+  { name: 'set_telop', cmd: 'setTelop', description: 'テロップの本文/スタイルを変更する。', schema: { type: 'object', properties: { clipId: { type: 'string' }, text: { type: 'string' }, style: { type: 'object' } }, required: ['clipId'] } },
+  { name: 'cut_silence', cmd: 'cutSilence', description: '動画/音声クリップの無音区間を検出して自動カットする（FFmpeg・ローカル完結）。', schema: { type: 'object', properties: { clipId: { type: 'string' }, noiseDb: { type: 'number' }, minDur: { type: 'number' } }, required: ['clipId'] } },
+  { name: 'cut_fillers', cmd: 'cutFillers', description: 'フィラー語（えー/あの/um 等）を検出してカットする（ローカルWhisper必要）。', schema: { type: 'object', properties: { clipId: { type: 'string' } }, required: ['clipId'] } },
+  { name: 'set_track_mute', cmd: 'setTrackMute', description: 'トラックの音声ミュートを設定する（映像だけ流す）。', schema: { type: 'object', properties: { trackId: { type: 'string' }, muted: { type: 'boolean' } }, required: ['trackId', 'muted'] } },
+  { name: 'add_crossfade', cmd: 'addCrossfade', description: '選択中クリップを直前のクリップに重ねてクロスフェードする。', schema: { type: 'object', properties: { duration: { type: 'number' } } } },
+  { name: 'import_media', cmd: 'importMedia', description: '素材ファイル（動画/画像/音声）を読み込む。paths は絶対パスの配列。', schema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } }, required: ['paths'] } },
+  { name: 'add_clip', cmd: 'addClip', description: '読み込み済み素材（mediaId）をタイムラインに配置する。', schema: { type: 'object', properties: { mediaId: { type: 'string' }, start: { type: 'number' }, trackId: { type: 'string' } }, required: ['mediaId'] } },
+  { name: 'export_video', cmd: 'export', description: '動画を書き出す。outputPath（絶対パス）必須。', schema: { type: 'object', properties: { outputPath: { type: 'string' }, format: { type: 'string' }, quality: { type: 'string' } }, required: ['outputPath'] } },
+  { name: 'undo', cmd: 'undo', description: '直前の編集を元に戻す。', schema: { type: 'object', properties: {} } },
+  { name: 'redo', cmd: 'redo', description: '元に戻した編集をやり直す。', schema: { type: 'object', properties: {} } },
+];
+const CMD_BY_TOOL = Object.fromEntries(TOOLS.map((t) => [t.name, t.cmd]));
+
+let server = null;
+let getWindow = null;
+const pending = new Map();
+let seq = 0;
+
+const serverUrl = () => `http://${HOST}:${PORT}/mcp`;
+
+// MCPツール呼び出しを renderer(EditCommands) へ送り、結果を待つ（id 相関 + タイムアウト）。
+function callRenderer(cmd, args, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const win = getWindow && getWindow();
+    if (!win || win.isDestroyed()) { reject(new Error('エディタのウィンドウが準備できていません')); return; }
+    const id = 'r' + (++seq);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('renderer timeout')); }, timeoutMs);
+    pending.set(id, { resolve, reject, timer });
+    win.webContents.send('mcp-invoke', { id, name: cmd, args });
+  });
+}
+function onResult(_e, msg) {
+  const p = pending.get(msg && msg.id);
+  if (!p) return;
+  clearTimeout(p.timer); pending.delete(msg.id);
+  p.resolve(msg); // { ok, result, error }
+}
+
+// JSON-RPC メソッドのルーティング
+async function dispatch(method, params) {
+  if (method === 'initialize') {
+    const pv = (params && params.protocolVersion) || '2024-11-05';
+    return { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'telora', version: '1.0.0' } };
+  }
+  if (method === 'ping') return {};
+  if (method === 'tools/list') {
+    return { tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.schema })) };
+  }
+  if (method === 'tools/call') {
+    const name = params && params.name;
+    const cmd = CMD_BY_TOOL[name];
+    if (!cmd) return { content: [{ type: 'text', text: 'unknown tool: ' + name }], isError: true };
+    // 書き出し・文字起こし系は FFmpeg/Whisper で時間がかかるためタイムアウトを長く取る
+    const LONG = new Set(['export', 'cutFillers', 'cutSilence', 'importMedia']);
+    const res = await callRenderer(cmd, (params && params.arguments) || {}, LONG.has(cmd) ? 600000 : 30000);
+    if (res && res.ok) return { content: [{ type: 'text', text: JSON.stringify(res.result == null ? { ok: true } : res.result) }] };
+    return { content: [{ type: 'text', text: String((res && res.error) || 'command failed') }], isError: true };
+  }
+  const err = new Error('Method not found: ' + method); err.code = -32601; throw err;
+}
+
+async function handleOne(msg) {
+  const isNotification = !msg || msg.id === undefined;
+  try {
+    const result = await dispatch(msg.method, msg.params);
+    if (isNotification) return null;
+    return { jsonrpc: '2.0', id: msg.id, result };
+  } catch (e) {
+    if (isNotification) return null;
+    return { jsonrpc: '2.0', id: msg.id != null ? msg.id : null, error: { code: e.code || -32603, message: String((e && e.message) || e) } };
+  }
+}
+
+function sendJson(res, status, obj) {
+  const body = Buffer.from(JSON.stringify(obj));
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': body.length });
+  res.end(body);
+}
+
+// windowGetter: () => BrowserWindow。サーバを起動して URL を返す。
+function start(windowGetter) {
+  if (server) return { ok: true, url: serverUrl() };
+  getWindow = windowGetter;
+  ipcMain.removeAllListeners('mcp-result');
+  ipcMain.on('mcp-result', onResult);
+
+  server = http.createServer((req, res) => {
+    // ループバック以外は拒否（DNSリバインド/外部アクセス対策）
+    const ra = req.socket.remoteAddress || '';
+    if (!(ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1')) { res.writeHead(403); res.end('forbidden'); return; }
+    if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Telora MCP server. POST JSON-RPC 2.0 to /mcp'); return; }
+    if (req.method !== 'POST') { res.writeHead(405); res.end('method not allowed'); return; }
+
+    let data = '';
+    req.on('data', (c) => { data += c; if (data.length > 8 * 1024 * 1024) req.destroy(); });
+    req.on('end', async () => {
+      let msg;
+      try { msg = JSON.parse(data || '{}'); } catch (_) { sendJson(res, 200, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); return; }
+      try {
+        if (Array.isArray(msg)) { // JSON-RPC バッチ
+          const out = (await Promise.all(msg.map(handleOne))).filter(Boolean);
+          if (!out.length) { res.writeHead(202); res.end(); return; }
+          sendJson(res, 200, out);
+        } else {
+          const out = await handleOne(msg);
+          if (!out) { res.writeHead(202); res.end(); return; } // 通知
+          sendJson(res, 200, out);
+        }
+      } catch (e) { sendJson(res, 200, { jsonrpc: '2.0', id: null, error: { code: -32603, message: String(e) } }); }
+    });
+  });
+  server.on('error', (e) => { console.log('[mcp] server error: ' + e); });
+  server.listen(PORT, HOST, () => { console.log('[mcp] listening on ' + serverUrl()); });
+  return { ok: true, url: serverUrl() };
+}
+
+function stop() { if (server) { try { server.close(); } catch (_) {} server = null; } }
+
+module.exports = { start, stop, url: serverUrl, TOOLS };

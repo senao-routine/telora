@@ -1,0 +1,8 @@
+{
+  "name": "telora-mcp",
+  "productName": "Telora (MCP)",
+  "version": "1.0.0",
+  "private": true,
+  "description": "モデル②: ローカルMCP版（外部AIエージェントがタイムラインを操作）",
+  "main": "main.js"
+}

@@ -46,6 +46,13 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('export-progress', handler);
   },
 
+  // モデル種別（base / mcp / chat）。main から additionalArguments で渡される。
+  model: (() => { const a = (process.argv || []).find((x) => x.startsWith('--telora-model=')); return a ? a.split('=')[1] : 'base'; })(),
+
+  // MCP ブリッジ（モデル②）：main の MCPサーバ ↔ renderer の EditCommands を往復させる。
+  onMcpInvoke: (cb) => { const h = (_e, msg) => cb(msg); ipcRenderer.on('mcp-invoke', h); return () => ipcRenderer.removeListener('mcp-invoke', h); },
+  sendMcpResult: (payload) => ipcRenderer.send('mcp-result', payload),
+
   // シェル連携
   showItem: (filePath) => ipcRenderer.invoke('show-item', filePath),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),

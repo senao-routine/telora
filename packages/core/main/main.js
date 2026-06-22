@@ -8,6 +8,9 @@ const { transcribe, transcribeWords, detectEngine, cancel: cancelTranscribe } = 
 
 app.setName('Telora'); // メニュー等のアプリ名
 
+// モデル種別（base / mcp / chat）。apps/<model>/main.js が require 前に環境変数で指定する。
+const MODEL = process.env.TELORA_MODEL || 'base';
+
 let mainWindow = null;
 let currentExportProc = null;
 
@@ -24,6 +27,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      additionalArguments: ['--telora-model=' + MODEL], // renderer(preload) へモデル種別を伝える
     },
   });
 
@@ -135,8 +139,33 @@ function buildMenu() {
         { role: 'togglefullscreen', label: 'フルスクリーン' },
       ],
     },
+    // モデル②: AIエージェント接続情報メニュー
+    ...(MODEL === 'mcp' ? [{
+      label: 'AI接続',
+      submenu: [
+        { label: 'MCP接続情報を表示…', click: () => showMcpInfo() },
+      ],
+    }] : []),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// MCP接続情報ダイアログ（各AIクライアントの登録コマンドを案内）
+function showMcpInfo() {
+  let url = 'http://127.0.0.1:19790/mcp';
+  try { url = require('./mcp-server').url(); } catch (_) {}
+  const detail = [
+    'お使いのAIエージェントから下記コマンドで接続すると、このタイムラインを操作できます。',
+    '',
+    `URL: ${url}`,
+    '',
+    `Claude Code:  claude mcp add --transport http telora ${url}`,
+    `Codex:        codex mcp add telora --url ${url}`,
+    `Cursor / Claude Desktop: MCP設定に上記URL(HTTP)を追加`,
+    '',
+    '※ サーバは 127.0.0.1（ローカル）限定です。',
+  ].join('\n');
+  dialog.showMessageBox(mainWindow, { type: 'info', title: 'MCP接続情報', message: 'Telora ローカルMCPサーバ', detail, buttons: ['OK'] });
 }
 
 // ---- IPC ハンドラ ----
@@ -339,6 +368,14 @@ ipcMain.handle('open-path', async (_e, filePath) => {
 
 app.whenReady().then(() => {
   createWindow();
+  // モデル②: ローカル MCP サーバを起動（外部AIエージェントがタイムラインを操作）。
+  if (MODEL === 'mcp') {
+    try {
+      const mcp = require('./mcp-server');
+      const info = mcp.start(() => mainWindow);
+      console.log('[mcp] ' + (info && info.url));
+    } catch (e) { console.log('[mcp] start failed: ' + e); }
+  }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

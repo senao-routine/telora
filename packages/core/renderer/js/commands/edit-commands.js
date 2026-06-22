@@ -8,12 +8,12 @@
 //  - 検証は mutate の外（読み取り）で行い、不正なら mutate 前に throw（不要な履歴を積まない）。
 import {
   getProject, getTracks, getTrack, totalDuration, getPlayhead, setPlayhead,
-  setSelection, findClip, getTextClips, defaultTextClip, mutate, undo, redo,
+  setSelection, getSelection, findClip, getTextClips, defaultTextClip, mutate, undo, redo,
   toggleTrackMute, clipEnd, clipDur, mediaById, slotFree,
 } from '../state.js';
 import { splitAtPlayhead, cutBefore as editCutBefore, cutAfter as editCutAfter, deleteSelection, applyCrossfade } from '../edit.js';
 import { silenceCut, fillerCut } from '../cut-tools.js';
-import { importMedia } from '../media.js';
+import { importMedia, addClipFromMedia } from '../media.js';
 import { buildExportPayload } from '../export-ui.js';
 import { uid } from '../util.js';
 
@@ -172,6 +172,14 @@ async function importMediaCmd({ paths }) {
   const added = await importMedia(paths, { addToTimeline: false });
   return { media: (added || []).map((m) => ({ id: m.id, name: m.name, type: m.type, duration: r3(m.duration) })) };
 }
+// 読み込み済み素材をタイムラインへ配置（addClipFromMedia は選択を新クリップへ移すので、それから id を得る）
+function addClip({ mediaId, start, trackId }) {
+  if (!mediaId) throw new Error('mediaId は必須です');
+  if (!mediaById(mediaId)) throw new Error('media が見つかりません: ' + mediaId);
+  addClipFromMedia(mediaId, { start: start != null ? start : getPlayhead(), trackId: trackId || null, silent: true });
+  const sel = getSelection();
+  return { clipId: sel ? sel.clipId : null, trackId: sel ? sel.trackId : null };
+}
 async function exportCmd(args = {}) {
   const { outputPath, format, quality, hwaccel, range } = args;
   if (!outputPath) throw new Error('outputPath は必須です（コマンドからの書き出しは保存先を明示してください）');
@@ -189,7 +197,7 @@ const HANDLERS = {
   getTimeline, getTranscript, selectClip,
   splitAt, cutBefore: cutBeforeCmd, cutAfter: cutAfterCmd, deleteClip, moveClip,
   addTelop, setTelop, cutSilence, cutFillers, setTrackMute,
-  addCrossfade, importMedia: importMediaCmd, export: exportCmd, undo: undoCmd, redo: redoCmd,
+  addCrossfade, importMedia: importMediaCmd, addClip, export: exportCmd, undo: undoCmd, redo: redoCmd,
 };
 
 // コマンド実行。常に {ok, result?} / {ok:false, error} を返す（例外は構造化エラーへ）。

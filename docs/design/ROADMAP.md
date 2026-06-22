@@ -5,8 +5,9 @@
 > ターミナルを閉じても、このファイルと `docs/design/00〜03` を読めば**続きから再開**できます。
 
 - **最終更新**: 2026-06-23
-- **現在のフェーズ**: フェーズ1 完了 ✅ → フェーズ2 着手前
-- **次の一歩**: フェーズ2「モデル② ローカルMCP」（[設計 02](./02-local-mcp.md)）。EditCommands を MCPツールとして公開する。
+- **現在のフェーズ**: フェーズ2 完了 ✅（モデル②が起動・MCP動作）→ フェーズ3 着手前
+- **次の一歩**: フェーズ3「モデル③ アプリ内AIチャット」（[設計 03](./03-ai-chat.md)）。②と同じ EditCommands を function calling で叩く。
+- **起動**: `npm run start:base`（①） / `npm run start:mcp`（②・MCPサーバ `http://127.0.0.1:19790/mcp`）
 - **設計書**: [00 全体/構成](./00-overview-and-structure.md) ・ [01 ベース](./01-base-editor.md) ・ [02 MCP](./02-local-mcp.md) ・ [03 AIチャット](./03-ai-chat.md)
 
 凡例: `- [ ]` 未着手 / `- [~]` 着手中（手動で `~` に） / `- [x]` 完了
@@ -66,18 +67,19 @@
 
 ゴール: main にHTTP MCPサーバ、外部エージェントがタイムライン操作。本体は無料/オフライン維持。
 
-- [ ] `apps/mcp/`（main.js が core 起動 + mcp-server 有効化）
-- [ ] preload に `onMcpInvoke` / `sendMcpResult` を**追加**（FROZEN なので追加のみ）
-- [ ] renderer `mcp-bridge.js`（onMcpInvoke → EditCommands.run → sendMcpResult）
-- [ ] main `mcp-server.js`：HTTPサーバ（`127.0.0.1` 限定・既定 OFF・ポート 19790）
-- [ ] `tools/list` / `tools/call`（まず4つ: `get_timeline` `split_clip` `add_telop` `cut_silence`）
-- [ ] id 相関の IPC 往復 + タイムアウト（既定15s）
-- [ ] **接続デモ**: Claude Code から接続し4ツール実行 → state 変化を確認
-- [ ] 残りツール（move_clip/cut_fillers/set_track_mute/add_crossfade/import/export/undo/redo…）
-- [ ] 長時間処理のジョブ化（export / transcribe）+ `get_job_status`
-- [ ] 設定UI（ON/OFF・ポート・接続情報表示）+ 任意トークン認証
-- [ ] **最小デモ達成**: 「全クリップの無音を消して」が外部エージェント経由で通る
-- [ ] develop へコミット（承認後）
+- [x] `apps/mcp/`（main.js が `TELORA_MODEL=mcp` で core 起動 → core が MCPサーバ有効化）。`npm run start:mcp`
+- [x] preload に `onMcpInvoke` / `sendMcpResult` / `model` を**追加**（FROZEN なので追加のみ）
+- [x] renderer `mcp-bridge.js`（onMcpInvoke → EditCommands.run → sendMcpResult）。`model==='mcp'` の時だけ読み込み
+- [x] main `mcp-server.js`：HTTPサーバ（`127.0.0.1` 限定・ポート 19790）。※専用アプリ＝起動＝利用意思とみなし ON（一般アプリ向けの「既定OFFトグル」は将来）
+- [x] `tools/list` / `tools/call`（**全19ツール**: get_timeline/get_transcript/select_clip/split_clip/cut_before/cut_after/delete_clip/move_clip/add_telop/set_telop/cut_silence/cut_fillers/set_track_mute/add_crossfade/import_media/add_clip/export_video/undo/redo）
+- [x] id 相関の IPC 往復 + タイムアウト（通常30s／書き出し・文字起こし系は600s）
+- [x] **接続デモ**: curl で JSON-RPC 往復を実機検証（initialize→tools/list→add_telop→get_timeline反映→import_media→add_clip→cut_silence made=2）。※実 Claude Code クライアント接続は手元環境で要確認（SSE/セッション等のエッジケース）
+- [x] 残りツール（move_clip/cut_fillers/set_track_mute/add_crossfade/import/add_clip/export/undo/redo …）
+- [x] 接続情報メニュー（`AI接続 → MCP接続情報を表示…` で各クライアントの登録コマンドを案内）
+- [x] **最小デモ達成**: 「無音を消す」が MCP 経由で通る（cut_silence made=2・実FFmpeg）
+- [x] モデル①無回帰・モデル分離確認（base は MCPポート開かず／model=base）
+- [ ] develop へコミット
+- [ ] （将来）長時間処理の本格ジョブ化（export/transcribe + `get_job_status`）・任意トークン認証・サーバON/OFFトグルUI
 
 ---
 
@@ -112,3 +114,4 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-23: **フェーズ2完了**。モデル②（ローカルMCP）が起動。`apps/mcp` + core に `mcp-server.js`（HTTP 127.0.0.1:19790）・`mcp-bridge.js`・preload追加・`addClip` コマンド。全19ツールを公開。curl で JSON-RPC 往復を実機検証（add_telop→反映、cut_silence made=2 実FFmpeg）、モデル①無回帰＆分離確認。接続情報メニュー追加。次はフェーズ3（AIチャット）。

@@ -11,6 +11,7 @@
   "scripts": {
     "start": "electron .",
     "start:base": "electron apps/base",
+    "start:mcp": "electron apps/mcp",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64"
