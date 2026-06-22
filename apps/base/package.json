@@ -1,0 +1,8 @@
+{
+  "name": "telora-base",
+  "productName": "Telora",
+  "version": "1.0.0",
+  "private": true,
+  "description": "モデル①: ベース動画編集ソフト（共有コアをそのまま起動）",
+  "main": "main.js"
+}

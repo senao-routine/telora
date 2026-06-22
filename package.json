@@ -3,9 +3,14 @@
   "productName": "Telora",
   "version": "1.0.0",
   "description": "Telora — テロップ＆カットに特化した無料の動画エディタ（Mac / Windows）",
-  "main": "src/main/main.js",
+  "main": "apps/base/main.js",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "start": "electron .",
+    "start:base": "electron apps/base",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64"
@@ -28,7 +33,8 @@
     "appId": "com.routinelabo.telora",
     "productName": "Telora",
     "files": [
-      "src/**/*",
+      "packages/core/**/*",
+      "apps/**/*",
       "package.json"
     ],
     "mac": {

@@ -4,9 +4,9 @@
 > 作業が終わるたびに `- [ ]` を `- [x]` に更新していきます。
 > ターミナルを閉じても、このファイルと `docs/design/00〜03` を読めば**続きから再開**できます。
 
-- **最終更新**: 2026-06-21
-- **現在のフェーズ**: フェーズ0 着手前（設計完了）
-- **次の一歩**: フェーズ0「モノレポ足場（現行を packages/core 化 → apps/base から起動）」
+- **最終更新**: 2026-06-23
+- **現在のフェーズ**: フェーズ0 完了 ✅ → フェーズ1 着手前
+- **次の一歩**: フェーズ1「編集コマンド層 EditCommands を新設」（②③の共有心臓部）
 - **設計書**: [00 全体/構成](./00-overview-and-structure.md) ・ [01 ベース](./01-base-editor.md) ・ [02 MCP](./02-local-mcp.md) ・ [03 AIチャット](./03-ai-chat.md)
 
 凡例: `- [ ]` 未着手 / `- [~]` 着手中（手動で `~` に） / `- [x]` 完了
@@ -28,14 +28,15 @@
 
 ゴール: 現行 Telora を `packages/core` へ移し、`apps/base`（モデル①）として従来どおり起動・動作。
 
-- [ ] ルート `package.json` に npm workspaces を定義（`packages/*`, `apps/*`）
-- [ ] `src/main/*` → `packages/core/main/` へ移設（export.js / transcribe.js / main.js / preload.js）
-- [ ] `src/renderer/*` → `packages/core/renderer/` へ移設（js / styles / index.html）
-- [ ] import パス・相対参照の修正
-- [ ] `apps/base/`（main.js / preload.js / 起動エントリ）から core を読み込み起動
-- [ ] `npm run start:base` スクリプト追加
-- [ ] **回帰確認**: モデル①が従来どおり動く（Electron eval ハーネス `TCE_DEBUG/TCE_EVAL/TCE_CAPTURE` で主要機能をスモーク）
-- [ ] develop へコミット（ユーザー承認後）
+- [x] ルート `package.json` に npm workspaces を定義（`packages/*`, `apps/*`）
+- [x] `src/main/*` → `packages/core/main/` へ移設（git mv で履歴保持）
+- [x] `src/renderer/*` → `packages/core/renderer/` へ移設（git mv で履歴保持）
+- [x] import パス・相対参照の修正 → **不要だった**（main.js が `__dirname` 相対で preload/renderer を参照しており、main と renderer をセットで移動したため無傷）
+- [x] `apps/base/`（main.js が core を require / package.json main=main.js）から起動
+- [x] `npm run start:base`（`electron apps/base`）と `start`（`electron .`→root main=apps/base/main.js）追加
+- [x] **回帰確認**: モデル①が従来どおり動く（eval ハーネスで検証：renderer import / クリップ描画 / フィルムストリップ / ミュート×4 / 録音ボタン / カット支援 / IPC audioPeaks・probe すべてOK・windowErrors 0・キャプチャ一致）
+- [x] electron-builder の `files` を `packages/core/**` `apps/**` に更新
+- [ ] develop へコミット
 
 ---
 
@@ -108,3 +109,4 @@
 ## 進捗ログ（任意・追記式）
 
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
+- 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。

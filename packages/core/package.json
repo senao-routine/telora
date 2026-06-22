@@ -1,0 +1,7 @@
+{
+  "name": "@telora/core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telora 共有コア（main: FFmpeg/Whisper/IPC、renderer: 状態/編集/UI）。3モデルが共有する。",
+  "main": "main/main.js"
+}
