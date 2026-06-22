@@ -84,24 +84,81 @@ export function expandClipForExport(clip, m, W, H, kind) {
   return out;
 }
 
-export async function runExport() {
+// 書き出しペイロードを構築する（DOM非依存・純データ）。runExport と編集コマンド層（export）から共有。
+// opts: { format, quality, hwaccel, range, muteBase?, outputPath? }。muteBase 省略時はベース層の muted を採用。
+// 返り値: { ok, payload } / { ok:false, error }
+export async function buildExportPayload(opts = {}) {
   const project = getProject();
   const W = project.settings.width, H = project.settings.height, fps = project.settings.fps || 30;
   const base = baseTrack();
 
   // ベーストラック（最下段 visual）の背景クリップ＝動画・画像。テロップはオーバーレイへ。
-  // transform（位置・サイズ）も pw/ph/x/y にして渡す（scale=1・中央なら全画面フィット）。
   const baseClips = [];
   if (base) {
     for (const c of base.clips) {
-      if (c.kind === 'text') continue; // テロップは overlays で処理
+      if (c.kind === 'text') continue;
       const m = mediaById(c.mediaId);
       if (!m || clipDur(c) <= 0.02) continue;
       for (const seg of expandClipForExport(c, m, W, H, c.kind)) baseClips.push(seg);
     }
   }
 
-  // オーバーレイ（下→上の順）：テロップ・オーバーレイ画像をフルフレームPNG化
+  const duration = totalDuration();
+  if (duration <= 0) return { ok: false, error: '書き出す内容がありません。素材を追加してください。' };
+
+  const format = opts.format || 'mp4';
+  const quality = opts.quality || 'normal';
+  const hwaccel = !!opts.hwaccel;
+  const range = opts.range || null;
+
+  // 合成レイヤを「下→上」のトラック順で1本のリストにまとめる（上の不透明クリップが下を隠す）。
+  const layers = [];
+  const audioClips = []; // 音声トラック＋非ベース動画クリップの音声をここに集約
+  for (const track of tracksBottomToTop()) {
+    if (track.kind !== 'visual') continue;
+    const isBase = !!track.base;
+    const videoClips = [];
+    const pngs = [];
+    for (const clip of track.clips) {
+      if (clipDur(clip) <= 0) continue;
+      if (clip.kind === 'text') {
+        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H, clip.opacity != null ? clip.opacity : 1), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none', fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+      } else if (clip.kind === 'image' && !isBase) {
+        const m = mediaById(clip.mediaId);
+        if (!m) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const dataUrl = await renderImageOverlayPng(clip, m, W, H);
+        if (dataUrl) pngs.push({ kind: 'png', dataUrl, start: clip.start, end: clipEnd(clip), anim: 'none', fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+      } else if (clip.kind === 'video' && !isBase) {
+        const m = mediaById(clip.mediaId);
+        if (!m || clipDur(clip) <= 0.02) continue;
+        for (const seg of expandClipForExport(clip, m, W, H, clip.kind)) videoClips.push(seg);
+        if (m.hasAudio !== false && !track.muted) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+      }
+    }
+    if (videoClips.length) layers.push({ kind: 'video', clips: videoClips });
+    for (const p of pngs) layers.push(p);
+  }
+
+  // 音声トラックのクリップ（BGM・ナレーション等）。ミュート層は除外。
+  for (const track of project.tracks) {
+    if (track.kind !== 'audio' || track.muted) continue;
+    for (const clip of track.clips) {
+      const m = mediaById(clip.mediaId);
+      if (!m || clipDur(clip) <= 0.02) continue;
+      audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+    }
+  }
+
+  if (baseClips.length === 0 && layers.length === 0 && audioClips.length === 0) return { ok: false, error: '書き出す内容がありません。' };
+
+  const muteBase = opts.muteBase != null ? !!opts.muteBase : !!(base && base.muted);
+  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: opts.outputPath || null, options: { format, quality, hwaccel, range, muteBase } };
+  return { ok: true, payload };
+}
+
+export async function runExport() {
+  const project = getProject();
   const duration = totalDuration();
   if (duration <= 0) { toast('書き出す内容がありません。素材を追加してください。', 'err'); return; }
 
@@ -130,56 +187,9 @@ export async function runExport() {
   showModal();
   setProgress(0, 'レイヤを準備しています…');
 
-  // 合成レイヤを「下→上」のトラック順で1本のリストにまとめる。これにより上のトラックの
-  // 不透明クリップ（動画・画像）が下を隠し、書き出しもプレビューと同じ重なり順になる（他ソフト同様）。
-  // 各 visual トラック内では「動画レイヤ → 画像/テロップPNG」の順（同トラック内は時間が重ならない）。
-  const layers = [];
-  const audioClips = []; // 音声トラック＋非ベース動画クリップの音声をここに集約
-  for (const track of tracksBottomToTop()) {
-    if (track.kind !== 'visual') continue;
-    const isBase = !!track.base;
-    const videoClips = [];
-    const pngs = [];
-    for (const clip of track.clips) {
-      if (clipDur(clip) <= 0) continue;
-      if (clip.kind === 'text') {
-        pngs.push({ kind: 'png', dataUrl: renderTelopPng(clip, W, H, clip.opacity != null ? clip.opacity : 1), start: clip.start, end: clipEnd(clip), anim: clip.anim || 'none', fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
-      } else if (clip.kind === 'image' && !isBase) {
-        const m = mediaById(clip.mediaId);
-        if (!m) continue;
-        // eslint-disable-next-line no-await-in-loop
-        const dataUrl = await renderImageOverlayPng(clip, m, W, H);
-        if (dataUrl) pngs.push({ kind: 'png', dataUrl, start: clip.start, end: clipEnd(clip), anim: 'none', fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
-      } else if (clip.kind === 'video' && !isBase) {
-        const m = mediaById(clip.mediaId);
-        if (!m || clipDur(clip) <= 0.02) continue;
-        for (const seg of expandClipForExport(clip, m, W, H, clip.kind)) videoClips.push(seg);
-        // 非ベース動画の音声もミックス対象に（音声を持つ素材のみ・transform非依存なので1本）。ミュート層は除外。
-        if (m.hasAudio !== false && !track.muted) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
-      }
-    }
-    if (videoClips.length) layers.push({ kind: 'video', clips: videoClips });
-    for (const p of pngs) layers.push(p);
-  }
-
-  // 音声トラックのクリップ（BGM・ナレーション等）。ミュート層は除外。
-  for (const track of project.tracks) {
-    if (track.kind !== 'audio' || track.muted) continue;
-    for (const clip of track.clips) {
-      const m = mediaById(clip.mediaId);
-      if (!m || clipDur(clip) <= 0.02) continue;
-      audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
-    }
-  }
-
-  if (baseClips.length === 0 && layers.length === 0 && audioClips.length === 0) {
-    hideModal();
-    toast('書き出す内容がありません。', 'err');
-    return;
-  }
-
-  const muteBase = !!(base && base.muted); // ベース層がミュートなら映像のみ書き出し
-  const payload = { output: { width: W, height: H, fps }, duration, baseClips, layers, audioClips, outputPath: dlg.filePath, options: { format, quality, hwaccel, range, muteBase } };
+  const built = await buildExportPayload({ format, quality, hwaccel, range, outputPath: dlg.filePath });
+  if (!built.ok) { hideModal(); toast(built.error, 'err'); return; }
+  const payload = built.payload;
 
   if (unsubProgress) unsubProgress();
   unsubProgress = window.api.onExportProgress(({ ratio, message }) => setProgress(ratio, message));

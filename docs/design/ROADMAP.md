@@ -5,8 +5,8 @@
 > ターミナルを閉じても、このファイルと `docs/design/00〜03` を読めば**続きから再開**できます。
 
 - **最終更新**: 2026-06-23
-- **現在のフェーズ**: フェーズ0 完了 ✅ → フェーズ1 着手前
-- **次の一歩**: フェーズ1「編集コマンド層 EditCommands を新設」（②③の共有心臓部）
+- **現在のフェーズ**: フェーズ1 完了 ✅ → フェーズ2 着手前
+- **次の一歩**: フェーズ2「モデル② ローカルMCP」（[設計 02](./02-local-mcp.md)）。EditCommands を MCPツールとして公開する。
 - **設計書**: [00 全体/構成](./00-overview-and-structure.md) ・ [01 ベース](./01-base-editor.md) ・ [02 MCP](./02-local-mcp.md) ・ [03 AIチャット](./03-ai-chat.md)
 
 凡例: `- [ ]` 未着手 / `- [~]` 着手中（手動で `~` に） / `- [x]` 完了
@@ -44,20 +44,21 @@
 
 ゴール: `packages/core/renderer/commands/edit-commands.js` を新設。JSON入出力・undo整合・`{ok,result,error}` 返却。
 
-- [ ] `edit-commands.js` 雛形（`run(name, args)` ディスパッチ＋構造化エラー）
-- [ ] 読み取り: `getTimeline`（getProject/totalDuration/getPlayhead 要約）
-- [ ] 読み取り: `getTranscript`（getTextClips）
-- [ ] `selectClip`（setSelection）
-- [ ] `splitAt` / `cutBefore` / `cutAfter`（setPlayhead + 既存関数）
-- [ ] `deleteClip`（選択 + deleteSelection）
-- [ ] `moveClip`（★新規 mutate 薄ラッパ：指定 start/trackId へ移動）
-- [ ] `addTelop`（★任意時刻にテロップ追加：defaultTextClip + mutate）
-- [ ] `setTelop`（mutate）
-- [ ] `cutSilence`（silenceCut）/ `cutFillers`（fillerCut）
-- [ ] `setTrackMute`（★値指定版：現 toggleTrackMute を補完）
-- [ ] `addCrossfade`（applyCrossfade）/ `importMedia` / `export` / `undo` / `redo`
-- [ ] 各コマンドの単体検証（TCE_EVAL でコマンド→state変化を assert）
-- [ ] develop へコミット（承認後）
+- [x] `edit-commands.js` 雛形（`run(name, args)` ディスパッチ＋構造化エラー / `listCommands`）。配置: `packages/core/renderer/js/commands/edit-commands.js`
+- [x] 読み取り: `getTimeline`（settings/playhead/duration/tracks→clips 要約）
+- [x] 読み取り: `getTranscript`（getTextClips → cues）
+- [x] `selectClip`（setSelection・存在検証）
+- [x] `splitAt` / `cutBefore` / `cutAfter`（setPlayhead + 既存関数）
+- [x] `deleteClip`（選択 + deleteSelection・存在検証）
+- [x] `moveClip`（新規 mutate 薄ラッパ：指定 start/trackId へ移動、text は尺保持）
+- [x] `addTelop`（任意時刻にテロップ追加：defaultTextClip + style 上書き）
+- [x] `setTelop`（text/style 更新）
+- [x] `cutSilence`（silenceCut）/ `cutFillers`（fillerCut）
+- [x] `setTrackMute`（値指定：現 toggleTrackMute を読み取り比較で補完）
+- [x] `addCrossfade`（applyCrossfade）/ `importMedia` / `export` / `undo` / `redo`
+- [x] export 用に `buildExportPayload(opts)` を export-ui.js から抽出（DOM非依存・runExport と共有）
+- [x] 各コマンドの単体検証（eval ハーネスで18コマンド全assert合格。無音カット・書き出しは実FFmpegで検証、undo/redo・エラー/未知コマンドも確認、windowErrors 0）
+- [ ] develop へコミット
 
 ---
 
@@ -110,3 +111,4 @@
 
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
+- 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
