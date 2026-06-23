@@ -101,6 +101,14 @@ function moveClip({ clipId, start, trackId }) {
     clip.start = ns;
     if (clip.kind === 'text') clip.end = ns + textDur;
     target.clips.sort((a, b) => a.start - b.start);
+    // リンク相手（映像/音声）も同じ開始位置へ揃える
+    const partnerId = clip.linkedAudioId || clip.linkedVideoId;
+    if (partnerId) {
+      for (const t of p.tracks) {
+        const pc = t.clips.find((x) => x.id === partnerId);
+        if (pc) { const pd = pc.kind === 'text' ? (pc.end - pc.start) : 0; pc.start = ns; if (pc.kind === 'text') pc.end = ns + pd; t.clips.sort((a, b) => a.start - b.start); break; }
+      }
+    }
   });
   return { clipId, start: r3(ns), trackId: trackId || f.track.id };
 }

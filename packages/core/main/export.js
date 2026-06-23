@@ -317,10 +317,11 @@ async function exportTimeline(payload, onProgress, registerProc) {
           filterParts.push(`[${idx}:v]trim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},${videoSetpts(bsp)},${bcropF}${place}${opF},${VFMT}${vfade}[v${i}]`);
         }
         // eslint-disable-next-line no-await-in-loop
-        if (await sourceHasAudio(c.path)) {
+        if (!c.muteAudio && await sourceHasAudio(c.path)) {
           // 音声が映像より短い素材でも concat が破綻しないよう、セグメント尺まで無音パディング
           filterParts.push(`[${idx}:a]atrim=start=${inPt.toFixed(3)}:end=${c.out.toFixed(3)},asetpts=PTS-STARTPTS${atempoChain(bsp)},apad=whole_dur=${dur.toFixed(3)},${AFMT}${afadeF}[a${i}]`);
         } else {
+          // 音声を分離済み（detachedAudio）のベース動画はリンク音声クリップが鳴らすため、ここは無音
           filterParts.push(`${SILENCE(dur)}[a${i}]`);
         }
       }

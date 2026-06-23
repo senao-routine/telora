@@ -209,6 +209,7 @@ export function addClipFromMedia(mediaId, { silent = false, trackId = null, star
       clip.start = mainTrackEnd();
       clip.start = findFreeSlot(track, clip.start, dur, null);
       track.clips.push(clip); track.clips.sort((a, b) => a.start - b.start);
+      if (clip.kind === 'video' && m.hasAudio !== false) attachLinkedAudio(p, clip, m);
       newClipId = clip.id; finalTrackId = track.id;
       return;
     }
@@ -230,11 +231,31 @@ export function addClipFromMedia(mediaId, { silent = false, trackId = null, star
     }
     clip.start = s;
     track.clips.push(clip); track.clips.sort((a, b) => a.start - b.start);
+    if (clip.kind === 'video' && m.hasAudio !== false) attachLinkedAudio(p, clip, m);
     newClipId = clip.id; finalTrackId = track.id;
   });
 
   if (finalTrackId && newClipId) setSelection({ trackId: finalTrackId, clipId: newClipId });
   if (!silent) toast(`「${m.name}」を追加しました`);
+}
+
+// 動画クリップの音声を、波形付きの音声クリップとして音声トラックへ自動追加し、
+// 動画側の音声は分離（detachedAudio）して二重再生を防ぐ。映像と音声は linkedAudioId/linkedVideoId で対応づけ。
+function attachLinkedAudio(p, videoClip, m) {
+  const dur = clipDur(videoClip);
+  if (dur <= 0) return;
+  const aud = {
+    id: uid('clip'), kind: 'audio', mediaId: m.id,
+    in: videoClip.in, out: videoClip.out, start: videoClip.start,
+    volume: 1, linkedVideoId: videoClip.id,
+  };
+  const audios = p.tracks.filter((t) => t.kind === 'audio');
+  let at = audios.find((t) => slotFree(t, aud.start, dur));
+  if (!at) { at = { id: uid('trk'), kind: 'audio', name: 'A' + (audios.length + 1), clips: [] }; p.tracks.push(at); }
+  at.clips.push(aud); at.clips.sort((a, b) => a.start - b.start);
+  videoClip.detachedAudio = true;
+  videoClip.linkedAudioId = aud.id;
+  ensureWaveform(m); // 波形を用意
 }
 
 // トラック上で start から dur ぶん、既存クリップと重ならない開始位置を探す

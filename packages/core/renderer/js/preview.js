@@ -131,8 +131,8 @@ function syncBaseVideo(t, shouldPlay) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
     } else { pendingSeek = true; }
-    // ベース層がミュートなら映像のみ（音声を止める）。それ以外はフェードに追従。
-    const baseMuted = !!(base.track && base.track.muted);
+    // ベース層がミュート、または音声を分離済み（リンク音声クリップが鳴らす）なら映像のみ。
+    const baseMuted = !!(base.track && base.track.muted) || !!base.clip.detachedAudio;
     try { video.muted = baseMuted; video.volume = baseMuted ? 0 : clipFadeAlpha(base.clip, t); } catch (_) {}
     if (shouldPlay) { if (video.paused) safePlay(); } else if (!video.paused) video.pause();
   } else {

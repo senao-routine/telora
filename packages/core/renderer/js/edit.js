@@ -125,11 +125,21 @@ export function cutAfter() {
 export function deleteSelection() {
   const ids = getSelectedIds();
   if (!ids.length) { toast('削除する対象を選択してください', 'err'); return; }
+  // リンクした映像/音声はセットで削除（detachedAudio の動画とその音声クリップ）
+  const all = new Set(ids);
+  for (const tr of getTracks()) {
+    for (const c of tr.clips) {
+      if (!all.has(c.id)) continue;
+      if (c.linkedAudioId) all.add(c.linkedAudioId);
+      if (c.linkedVideoId) all.add(c.linkedVideoId);
+    }
+  }
+  const del = [...all];
   mutate((p) => {
-    for (const tr of p.tracks) tr.clips = tr.clips.filter((c) => !ids.includes(c.id));
+    for (const tr of p.tracks) tr.clips = tr.clips.filter((c) => !del.includes(c.id));
   });
   setSelection(null);
-  toast(ids.length > 1 ? `${ids.length}件を削除しました` : '削除しました');
+  toast(del.length > 1 ? `${del.length}件を削除しました` : '削除しました');
 }
 
 // テロップ追加：再生位置に置く。上半分(visual)の空いているトラックを上から探し、
