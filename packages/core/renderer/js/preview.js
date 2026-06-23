@@ -193,7 +193,10 @@ function syncVideoTracks(t, shouldPlay) {
       const m = mediaById(c.mediaId);
       const vsrc = m ? fileUrl(previewPath(m)) : '';
       if (m && el._srcUrl !== vsrc) { el._srcUrl = vsrc; el._mediaId = m.id; el._pending = true; el.src = vsrc; el.load(); }
-      el.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
+      // 音声を分離済み（リンク音声クリップが鳴らす）またはトラックミュートなら、動画側の音声は無音（二重再生防止）
+      const elMuted = !!track.muted || !!c.detachedAudio;
+      try { el.muted = elMuted; } catch (_) {}
+      el.volume = elMuted ? 0 : clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
       const sp = clipSpeed(c); try { el.playbackRate = sp; } catch (_) {}
       const desired = clamp(c.in + (t - c.start) * sp, 0, m ? m.duration : 1e9);
       if (el.readyState >= 1) {

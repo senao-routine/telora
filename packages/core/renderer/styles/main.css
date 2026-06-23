@@ -229,7 +229,7 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 .clip-image { background: linear-gradient(180deg, var(--clip-image-2), var(--clip-image)); }
 .clip-text { background: linear-gradient(180deg, var(--clip-text-2), var(--clip-text)); }
 .clip-audio { background: linear-gradient(180deg, var(--clip-audio-2), var(--clip-audio)); }
-.clip-audio::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.16) 0 1px, transparent 1px 5px); opacity: .55; pointer-events: none; }
+.clip-audio::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.16) 0 1px, transparent 1px 5px); opacity: .22; pointer-events: none; }
 .clip-audio .clip-label { z-index: 1; }
 .clip.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--accent), 0 4px 14px rgba(0,0,0,.5); z-index: 3; }
 .clip .clip-thumb { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: .5; }
@@ -353,7 +353,7 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 .tl-marker:hover { border-top-color: #fff; }
 
 /* オーディオ波形（クリップ背面） */
-.clip-wave { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .75; pointer-events: none; }
+.clip-wave { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; opacity: 1; pointer-events: none; }
 .clip-audio .clip-label, .clip-audio .clip-dur { position: relative; z-index: 1; }
 /* 動画クリップ下部に重ねる音声波形バンド */
 .clip-wave-video { position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 14px; width: 100%; z-index: 1; opacity: .9; background: linear-gradient(180deg, rgba(8,12,20,0) 0%, rgba(8,12,20,.5) 100%); pointer-events: none; }

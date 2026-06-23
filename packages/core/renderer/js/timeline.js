@@ -180,8 +180,9 @@ function renderClip(track, clip, P, sel) {
         strip.appendChild(el('div', { class: 'film-cell', style: url ? `background-image:url(${url})` : '' }));
       }
       children.push(strip);
-      // 動画の音声波形を下部に重ねる（音声を持つ素材のみ・無音カットなどの目安に）
-      if (m.hasAudio !== false) {
+      // 音声を分離した動画は映像のみ（波形は音声トラック側で表示＝別タイムライン）。
+      // 分離していない動画のみ、下部に波形を重ねる。
+      if (m.hasAudio !== false && !clip.detachedAudio) {
         ensureWaveform(m);
         const wh = 16;
         const wc = el('canvas', { class: 'clip-wave clip-wave-video', width: Math.max(1, Math.round(width)), height: wh });
@@ -192,10 +193,10 @@ function renderClip(track, clip, P, sel) {
       const thumb = m ? getThumb(m.id) : null;
       if (thumb) children.push(el('div', { class: 'clip-thumb', style: `background-image:url(${thumb})` }));
     } else if (clip.kind === 'audio' && m) {
-      // 音声クリップ：波形を背面に描画
+      // 音声クリップ：波形をしっかり表示（クリップ高さいっぱい・明るい色）
       ensureWaveform(m);
-      const wc = el('canvas', { class: 'clip-wave', width: Math.max(1, Math.round(width)), height: 40 });
-      drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(255,255,255,0.5)');
+      const wc = el('canvas', { class: 'clip-wave', width: Math.max(1, Math.round(width)), height: 48 });
+      drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(228,238,255,0.96)');
       children.push(wc);
     }
     children.push(el('div', { class: 'clip-dur', text: `${clipDur(clip).toFixed(1)}s` }));

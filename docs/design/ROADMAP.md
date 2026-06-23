@@ -116,6 +116,7 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-23: **二重音声バグ修正＋映像/音声の完全分離表示**。原因＝非ベース動画(trackVideoEls)が `muted=false` でリンク音声と二重再生していた→ detachedAudio/トラックミュート時に動画側 `<video>` を muted（ベース・非ベース両方）。動画クリップは分離時に波形バンドを出さず映像のみ（波形は音声トラック側）。音声クリップの波形を明るく・高く（高さ48・明色・装飾ストライプを抑制）して「しっかり表示」。base/非ベース両ケースで muted・windowErrors 0 を検証。
 - 2026-06-23: **動画＝音声リンク（自動追加）**。動画を配置すると、その音声を波形付きの音声クリップとして音声トラックへ自動追加（`attachLinkedAudio`）。動画側の音声は分離（`detachedAudio`）してプレビュー/書き出しの二重再生を防止（preview ミュート・export base concat 無音・非ベース audioClips 除外）。映像/音声は `linkedAudioId/linkedVideoId` で対応づけ、削除・移動はセットで連動（timeline ドラッグ＋EditCommands.moveClip）。共有コアのため①②③に反映。実書き出し・状態で検証、windowErrors 0。
 - 2026-06-23: **デザイン改善（タイムライン）**。動画クリップの素材フレームを主役に：スクリム除去で明るく、フィルムストリップを高密度化（FRAME_W 78→56・抽出幅200）、クリップ名は左下の小さなピル型に、波形帯を細く。共有コアのため①②③全バージョンに反映。混在（動画/画像/テロップ/音声）で無回帰確認。
 - 2026-06-23: **フェーズ3完了**。モデル③（アプリ内AIチャット）が起動。`apps/chat` + 共有ツールカタログ + `chat-orchestrator`（function calling→EditCommands）+ `llm-proxy`（Anthropic/OpenAI/ローカル中継・キーはmain保持）+ 右ドロワーUI + ⚙API設定。疑似LLMでオーケストレータ/確認フロー/設定IPC/UIを検証（実APIはキー設定後に通電）。**3モデル①②③すべて起動可能に**。
