@@ -44,6 +44,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.api && window.api.model === 'mcp') {
     import('./mcp-bridge.js').then((m) => m.initMcpBridge()).catch((e) => console.log('[mcp-bridge] load failed', e));
   }
+  // モデル③: アプリ内AIチャットパネルを起動
+  if (window.api && window.api.model === 'chat') {
+    import('./chat-panel.js').then((m) => m.initChatPanel()).catch((e) => console.log('[chat-panel] load failed', e));
+  }
   // ポップオーバーの外側クリック / Esc で閉じる
   window.addEventListener('click', () => closeAllPopovers());
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllPopovers(); }, true);

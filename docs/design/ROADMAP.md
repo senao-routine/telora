@@ -5,9 +5,9 @@
 > ターミナルを閉じても、このファイルと `docs/design/00〜03` を読めば**続きから再開**できます。
 
 - **最終更新**: 2026-06-23
-- **現在のフェーズ**: フェーズ2 完了 ✅（モデル②が起動・MCP動作）→ フェーズ3 着手前
-- **次の一歩**: フェーズ3「モデル③ アプリ内AIチャット」（[設計 03](./03-ai-chat.md)）。②と同じ EditCommands を function calling で叩く。
-- **起動**: `npm run start:base`（①） / `npm run start:mcp`（②・MCPサーバ `http://127.0.0.1:19790/mcp`）
+- **現在のフェーズ**: フェーズ3 完了 ✅ → **3モデル（①②③）すべて起動可能**
+- **残り**: ③の実LLM E2E（ユーザーのAPIキー設定が必要）。②③の堅牢化（MCP実クライアント接続確認・本格ジョブ化・トークン認証等）は任意の将来課題。
+- **起動**: `npm run start:base`（①）／`npm run start:mcp`（②・MCP `http://127.0.0.1:19790/mcp`）／`npm run start:chat`（③・右下「🤖 AIチャット」）
 - **設計書**: [00 全体/構成](./00-overview-and-structure.md) ・ [01 ベース](./01-base-editor.md) ・ [02 MCP](./02-local-mcp.md) ・ [03 AIチャット](./03-ai-chat.md)
 
 凡例: `- [ ]` 未着手 / `- [~]` 着手中（手動で `~` に） / `- [x]` 完了
@@ -87,16 +87,18 @@
 
 ゴール: アプリ内LLMが function calling で EditCommands を呼ぶ。外部API（オプトイン）/ローカル選択。
 
-- [ ] `apps/chat/`
-- [ ] preload に `llmChat` 追加 / main `llm-proxy.js`（外部API HTTPS 中継・キーは main 保持）
-- [ ] `chat-panel.js`（履歴・入力・「実行前に確認」トグル）
-- [ ] オーケストレータ（getTimeline → LLM → tool_calls →（破壊的は確認）→ EditCommands.run → 結果表示）
-- [ ] 破壊的操作の確認ダイアログ + 履歴グルーピング（↩ 取り消し）
-- [ ] **最小デモ達成**: 「この動画の無音を全部消して」→ 実行 →「12箇所・8.3秒削除（↩）」
-- [ ] ローカルモデル経路（llama.cpp/Ollama 等）
-- [ ] APIキー設定UI（main の userData / キーチェーン・gitignore・オプトイン）
-- [ ] 複合指示の多ターン化
-- [ ] develop へコミット（承認後）
+- [x] `apps/chat/`（`TELORA_MODEL=chat`）。`npm run start:chat`
+- [x] preload に `llmChat`/`llmConfigGet`/`llmConfigSet` 追加 / main `llm-proxy.js`（Anthropic・OpenAI互換・ローカルのHTTPS中継、キーは main の userData にのみ保存）
+- [x] `chat-panel.js`（右ドロワー：会話履歴・入力・状態表示・API設定モーダル）。`model==='chat'` 時のみ読み込み
+- [x] 共有ツールカタログ `commands/tool-catalog.js`（19ツール・破壊フラグ付き。②③共通の基準）
+- [x] `chat-orchestrator.js`（getTimeline → LLM → tool_calls →（破壊的は onConfirm）→ EditCommands.run → 逐次 onEvent 表示・多ターンループ maxSteps）
+- [x] 破壊的操作の確認ダイアログ（実行は EditCommands 経由＝全て undo 可能）
+- [x] **オーケストレータ検証**（疑似LLM注入・実API不要）: ツール19/タイムライン受領、add_telop 反映、delete_clip は確認キャンセルで非実行・承認で削除。設定IPC往復（キー秘匿）、no-keyエラー、UI（fab/ドロワー）表示も確認・windowErrors 0
+- [x] ローカルモデル経路（OpenAI互換 baseUrl 対応）
+- [x] APIキー設定UI（⚙モーダル。キーは main userData に保存・renderer/プロジェクトに出さない・オプトイン）
+- [x] 複合指示の多ターン化（ツール実行→結果を次ターンへ）
+- [ ] develop へコミット
+- [ ] （要・実機）ユーザーのAPIキーを設定し、実LLMで「無音を全部消して」等のE2E確認（HTTP中継コードは実装済・キー未設定のため本セッションでは未通電）
 
 ---
 
@@ -115,4 +117,5 @@
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
 - 2026-06-23: **デザイン改善（タイムライン）**。動画クリップの素材フレームを主役に：スクリム除去で明るく、フィルムストリップを高密度化（FRAME_W 78→56・抽出幅200）、クリップ名は左下の小さなピル型に、波形帯を細く。共有コアのため①②③全バージョンに反映。混在（動画/画像/テロップ/音声）で無回帰確認。
+- 2026-06-23: **フェーズ3完了**。モデル③（アプリ内AIチャット）が起動。`apps/chat` + 共有ツールカタログ + `chat-orchestrator`（function calling→EditCommands）+ `llm-proxy`（Anthropic/OpenAI/ローカル中継・キーはmain保持）+ 右ドロワーUI + ⚙API設定。疑似LLMでオーケストレータ/確認フロー/設定IPC/UIを検証（実APIはキー設定後に通電）。**3モデル①②③すべて起動可能に**。
 - 2026-06-23: **フェーズ2完了**。モデル②（ローカルMCP）が起動。`apps/mcp` + core に `mcp-server.js`（HTTP 127.0.0.1:19790）・`mcp-bridge.js`・preload追加・`addClip` コマンド。全19ツールを公開。curl で JSON-RPC 往復を実機検証（add_telop→反映、cut_silence made=2 実FFmpeg）、モデル①無回帰＆分離確認。接続情報メニュー追加。次はフェーズ3（AIチャット）。

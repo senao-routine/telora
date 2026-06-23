@@ -53,6 +53,11 @@ contextBridge.exposeInMainWorld('api', {
   onMcpInvoke: (cb) => { const h = (_e, msg) => cb(msg); ipcRenderer.on('mcp-invoke', h); return () => ipcRenderer.removeListener('mcp-invoke', h); },
   sendMcpResult: (payload) => ipcRenderer.send('mcp-result', payload),
 
+  // モデル③: アプリ内AIチャットの LLM 中継。APIキーは main 側でのみ保持。
+  llmChat: (payload) => ipcRenderer.invoke('llm-chat', payload),
+  llmConfigGet: () => ipcRenderer.invoke('llm-config-get'),
+  llmConfigSet: (cfg) => ipcRenderer.invoke('llm-config-set', cfg),
+
   // シェル連携
   showItem: (filePath) => ipcRenderer.invoke('show-item', filePath),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),

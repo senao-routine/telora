@@ -12,6 +12,7 @@
     "start": "electron .",
     "start:base": "electron apps/base",
     "start:mcp": "electron apps/mcp",
+    "start:chat": "electron apps/chat",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win --x64"

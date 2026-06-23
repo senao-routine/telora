@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, audioPeaks, detectSilence, saveRecording } = require('./export');
 const { transcribe, transcribeWords, detectEngine, cancel: cancelTranscribe } = require('./transcribe');
+const { llmChat, getConfigSafe: getLlmConfig, setConfig: setLlmConfig } = require('./llm-proxy');
 
 app.setName('Telora'); // メニュー等のアプリ名
 
@@ -222,6 +223,11 @@ ipcMain.handle('transcribe-words', async (event, payload) => {
 });
 
 ipcMain.handle('cancel-transcribe', async () => ({ ok: cancelTranscribe() }));
+
+// モデル③: アプリ内AIチャット用 LLM 中継（APIキーは main 保持）
+ipcMain.handle('llm-chat', async (_e, payload) => { return await llmChat(payload || {}); });
+ipcMain.handle('llm-config-get', async () => getLlmConfig());
+ipcMain.handle('llm-config-set', async (_e, cfg) => setLlmConfig(cfg || {}));
 
 ipcMain.handle('open-videos', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
