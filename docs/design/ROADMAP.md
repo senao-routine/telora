@@ -114,4 +114,5 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-23: **デザイン改善（タイムライン）**。動画クリップの素材フレームを主役に：スクリム除去で明るく、フィルムストリップを高密度化（FRAME_W 78→56・抽出幅200）、クリップ名は左下の小さなピル型に、波形帯を細く。共有コアのため①②③全バージョンに反映。混在（動画/画像/テロップ/音声）で無回帰確認。
 - 2026-06-23: **フェーズ2完了**。モデル②（ローカルMCP）が起動。`apps/mcp` + core に `mcp-server.js`（HTTP 127.0.0.1:19790）・`mcp-bridge.js`・preload追加・`addClip` コマンド。全19ツールを公開。curl で JSON-RPC 往復を実機検証（add_telop→反映、cut_silence made=2 実FFmpeg）、モデル①無回帰＆分離確認。接続情報メニュー追加。次はフェーズ3（AIチャット）。

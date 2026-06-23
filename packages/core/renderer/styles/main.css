@@ -237,11 +237,13 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 .clip .clip-filmstrip { position: absolute; inset: 0; display: flex; z-index: 0; overflow: hidden; }
 .clip .clip-filmstrip .film-cell { flex: 1 1 0; min-width: 0; background: #0a0c12 center/cover no-repeat; box-shadow: inset -1px 0 0 rgba(0,0,0,.3); }
 .clip .clip-filmstrip .film-cell:last-child { box-shadow: none; }
-/* ラベルの可読性のため上下にうっすらスクリム */
-.clip-video .clip-filmstrip::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.32), rgba(0,0,0,0) 28%, rgba(0,0,0,0) 62%, rgba(0,0,0,.42)); pointer-events: none; }
-.clip .clip-label { position: absolute; left: 8px; right: 8px; bottom: 4px; font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px rgba(0,0,0,.9); pointer-events: none; font-weight: 600; }
-.clip .clip-dur { position: absolute; top: 3px; left: 8px; font-size: 10px; color: rgba(255,255,255,.9); text-shadow: 0 1px 3px rgba(0,0,0,.9); pointer-events: none; }
-.clip .clip-badge { position: absolute; top: 3px; right: 8px; font-size: 9px; font-weight: 800; color: rgba(255,255,255,.95); background: rgba(0,0,0,.35); padding: 1px 4px; border-radius: 3px; pointer-events: none; }
+/* フレームを主役にするため全体スクリムは無し。ラベル下にだけ控えめなグラデを敷く */
+.clip-video .clip-filmstrip::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 38%; background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.45)); pointer-events: none; }
+/* クリップ名は全幅を覆わず、左下の小さなピル型に（フレームが見えるように） */
+.clip .clip-label { position: absolute; left: 5px; right: auto; bottom: 4px; max-width: calc(100% - 10px); font-size: 10.5px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; font-weight: 600; }
+.clip-video .clip-label, .clip-image .clip-label { background: rgba(0,0,0,.5); padding: 1px 6px; border-radius: 4px; }
+.clip .clip-dur { position: absolute; top: 4px; left: 5px; font-size: 9.5px; color: #fff; background: rgba(0,0,0,.5); padding: 0 5px; border-radius: 4px; pointer-events: none; }
+.clip .clip-badge { position: absolute; top: 4px; right: 5px; font-size: 9px; font-weight: 800; color: rgba(255,255,255,.95); background: rgba(0,0,0,.5); padding: 1px 4px; border-radius: 4px; pointer-events: none; }
 .clip-text .clip-label { position: static; color: #2a1c00; text-shadow: none; padding: 0 4px; align-self: center; }
 .clip-text { display: flex; align-items: center; }
 .clip .trim { position: absolute; top: 0; bottom: 0; width: 10px; cursor: ew-resize; z-index: 4; background: rgba(0,0,0,.28); }
@@ -354,8 +356,8 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 .clip-wave { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .75; pointer-events: none; }
 .clip-audio .clip-label, .clip-audio .clip-dur { position: relative; z-index: 1; }
 /* 動画クリップ下部に重ねる音声波形バンド */
-.clip-wave-video { position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 16px; width: 100%; z-index: 1; opacity: .92; background: linear-gradient(180deg, rgba(8,12,20,0) 0%, rgba(8,12,20,.55) 100%); pointer-events: none; }
-.clip-video .clip-label { z-index: 2; bottom: 16px; }
+.clip-wave-video { position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 14px; width: 100%; z-index: 1; opacity: .9; background: linear-gradient(180deg, rgba(8,12,20,0) 0%, rgba(8,12,20,.5) 100%); pointer-events: none; }
+.clip-video .clip-label { z-index: 2; bottom: 17px; }
 
 /* トグル状態のトップバーボタン */
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }

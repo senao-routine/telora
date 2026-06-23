@@ -2,8 +2,8 @@
 // FFmpeg (window.api.extractFrame) でソース時刻のフレームを抽出し、ソース時刻を量子化してキャッシュ共有する。
 import { emit } from './state.js';
 
-export const FRAME_W = 78;     // フィルムストリップ1コマの表示幅(px)の目安
-const THUMB_W = 160;           // 抽出する画像の幅(px)。クリップ高さに合わせて縮小表示
+export const FRAME_W = 56;     // フィルムストリップ1コマの表示幅(px)の目安（小さめ＝コマ数が増え中身が読みやすい）
+const THUMB_W = 200;           // 抽出する画像の幅(px)。クリップ高さに合わせて縮小表示（解像感UP）
 const BUCKET = 0.5;            // ソース時刻を 0.5s 単位に量子化 → ズーム変更でもキャッシュ再利用
 const MAX_CONCURRENT = 2;      // 同時に走らせる ffmpeg 数（重くなりすぎないよう抑制）
 
