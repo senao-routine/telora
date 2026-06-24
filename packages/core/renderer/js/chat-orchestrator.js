@@ -30,7 +30,12 @@ export async function runChatTurn(userText, { llm, onConfirm, onEvent, maxSteps 
 
     if (resp.text) emit({ type: 'assistant', text: resp.text });
     const calls = resp.toolCalls || [];
-    if (!calls.length) { return { final: resp.text || '（応答なし）', events, messages }; }
+    if (!calls.length) {
+      // 最終応答（テキストのみ）も履歴に残す。これで履歴が tool_result(user) で終わらず、
+      // 次ターンのユーザー発話と user が連続して Anthropic の交互制約に違反するのを防ぐ。
+      messages.push({ role: 'assistant', content: resp.text || '(完了)' });
+      return { final: resp.text || '（応答なし）', events, messages };
+    }
 
     messages.push({ role: 'assistant', content: resp.text || '', toolCalls: calls });
 

@@ -6,6 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
+const fmt = require('./llm-format'); // メッセージ整形（純粋関数・単体テスト済み）
 
 function configPath() { return path.join(app.getPath('userData'), 'llm-config.json'); }
 
@@ -50,67 +51,22 @@ function postJson(urlStr, headers, bodyObj) {
   });
 }
 
-// 共通メッセージ → Anthropic messages 形式
-function toAnthropicMessages(messages) {
-  const out = [];
-  for (const m of messages) {
-    if (m.role === 'user') out.push({ role: 'user', content: m.content });
-    else if (m.role === 'assistant') {
-      const blocks = [];
-      if (m.content) blocks.push({ type: 'text', text: m.content });
-      for (const tc of (m.toolCalls || [])) blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.args || {} });
-      out.push({ role: 'assistant', content: blocks.length ? blocks : (m.content || '') });
-    } else if (m.role === 'tool') {
-      out.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.toolCallId, content: m.content }] });
-    }
-  }
-  return out;
-}
-
 async function anthropicChat({ model, apiKey, baseUrl, system, timelineJson, messages, tools }) {
   const url = (baseUrl || 'https://api.anthropic.com') + '/v1/messages';
-  const sys = system + '\n\n# 現在のタイムライン(JSON)\n' + (timelineJson || '');
-  const body = {
-    model: model || 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: sys,
-    messages: toAnthropicMessages(messages),
-    tools: (tools || []).map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-  };
+  const body = fmt.buildAnthropicBody({ model, system, timelineJson, messages, tools });
   const r = await postJson(url, { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, body);
   if (r.status !== 200 || !r.json) return { ok: false, error: 'Anthropic API エラー (' + r.status + '): ' + (r.json && r.json.error && r.json.error.message || r.text || '').slice(0, 300) };
-  let text = '';
-  const toolCalls = [];
-  for (const block of (r.json.content || [])) {
-    if (block.type === 'text') text += block.text;
-    else if (block.type === 'tool_use') toolCalls.push({ id: block.id, name: block.name, args: block.input || {} });
-  }
-  return { ok: true, text, toolCalls };
+  return Object.assign({ ok: true }, fmt.parseAnthropicResponse(r.json));
 }
 
 // OpenAI 互換（function calling / tools）。ローカル推論(OpenAI互換)も baseUrl で対応。
-function toOpenAiMessages(system, timelineJson, messages) {
-  const out = [{ role: 'system', content: system + '\n\n# 現在のタイムライン(JSON)\n' + (timelineJson || '') }];
-  for (const m of messages) {
-    if (m.role === 'user') out.push({ role: 'user', content: m.content });
-    else if (m.role === 'assistant') out.push({ role: 'assistant', content: m.content || '', tool_calls: (m.toolCalls || []).map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } })) });
-    else if (m.role === 'tool') out.push({ role: 'tool', tool_call_id: m.toolCallId, content: m.content });
-  }
-  return out;
-}
 async function openaiChat({ model, apiKey, baseUrl, system, timelineJson, messages, tools }) {
   const url = (baseUrl || 'https://api.openai.com') + '/v1/chat/completions';
-  const body = {
-    model: model || 'gpt-4o-mini',
-    messages: toOpenAiMessages(system, timelineJson, messages),
-    tools: (tools || []).map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })),
-  };
+  const body = fmt.buildOpenAiBody({ model, system, timelineJson, messages, tools });
   const headers = {}; if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
   const r = await postJson(url, headers, body);
   if (r.status !== 200 || !r.json) return { ok: false, error: 'OpenAI API エラー (' + r.status + '): ' + (r.text || '').slice(0, 300) };
-  const msg = r.json.choices && r.json.choices[0] && r.json.choices[0].message;
-  const toolCalls = ((msg && msg.tool_calls) || []).map((tc) => { let a = {}; try { a = JSON.parse(tc.function.arguments || '{}'); } catch (_) {} return { id: tc.id, name: tc.function.name, args: a }; });
-  return { ok: true, text: (msg && msg.content) || '', toolCalls };
+  return Object.assign({ ok: true }, fmt.parseOpenAiResponse(r.json));
 }
 
 async function llmChat(payload) {
