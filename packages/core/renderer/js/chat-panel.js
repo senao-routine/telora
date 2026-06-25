@@ -96,6 +96,22 @@ async function openSettings() {
   const provSel = el('select', { class: 'select', style: 'width:100%' }, ['anthropic', 'openai', 'local'].map((p) => el('option', { value: p, ...(c.provider === p ? { selected: 'selected' } : {}) }, [p])));
   const modelIn = el('input', { type: 'text', class: 'chat-field', value: c.model || '', placeholder: '例: claude-sonnet-4-6 / gpt-4o-mini' });
   const keyIn = el('input', { type: 'password', class: 'chat-field', placeholder: c.hasKey ? '（設定済み・変更する場合のみ入力）' : 'APIキーを入力' });
+  // プロバイダごとの「APIキー取得ページ」を外部ブラウザで開くリンク
+  const KEY_PAGES = {
+    openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI（ChatGPT）のAPIキー発行ページを開く ↗' },
+    anthropic: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic（Claude）のAPIキー発行ページを開く ↗' },
+    local: { url: '', label: 'ローカルモデルはキー不要（ベースURLを設定）' },
+  };
+  const keyLink = el('a', { class: 'chat-keylink', href: '#' });
+  const updateKeyLink = () => {
+    const k = KEY_PAGES[provSel.value] || KEY_PAGES.openai;
+    keyLink.textContent = k.label;
+    keyLink.dataset.url = k.url || '';
+    keyLink.style.display = k.url ? 'inline-block' : 'none'; // ローカルはキー不要なので非表示
+  };
+  keyLink.onclick = (e) => { e.preventDefault(); const u = keyLink.dataset.url; if (u) window.api.openExternal(u); };
+  provSel.addEventListener('change', updateKeyLink);
+  updateKeyLink();
   const baseIn = el('input', { type: 'text', class: 'chat-field', value: c.baseUrl || '', placeholder: 'ローカル/互換時のベースURL（任意）' });
   const testResult = el('div', { class: 'chat-test-result' });
   const save = async () => { // 入力中の設定を保存（接続テスト前にも保存しておく）
@@ -119,7 +135,7 @@ async function openSettings() {
       el('div', { class: 'chat-modal-title', text: 'AIチャット API設定' }),
       el('label', { class: 'chat-lbl', text: 'プロバイダ' }), provSel,
       el('label', { class: 'chat-lbl', text: 'モデル' }), modelIn,
-      el('label', { class: 'chat-lbl', text: 'APIキー（main側に安全に保存）' }), keyIn,
+      el('label', { class: 'chat-lbl', text: 'APIキー（main側に安全に保存）' }), keyIn, keyLink,
       el('label', { class: 'chat-lbl', text: 'ベースURL（任意・ローカル/互換用）' }), baseIn,
       el('p', { class: 'chat-note', text: '外部APIは任意（オプトイン）。キーはアプリ内部にのみ保存され、プロジェクトには含まれません。' }),
       el('div', { class: 'chat-modal-actions' }, [

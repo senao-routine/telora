@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('api', {
   // シェル連携
   showItem: (filePath) => ipcRenderer.invoke('show-item', filePath),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // メニュー → レンダラ
   onMenu: (channel, cb) => {

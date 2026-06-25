@@ -370,6 +370,15 @@ ipcMain.handle('open-path', async (_e, filePath) => {
   catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// 外部URLを既定ブラウザで開く（http/https のみ許可）
+ipcMain.handle('open-external', async (_e, url) => {
+  try {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { ok: false, error: 'invalid url' };
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ---- アプリライフサイクル ----
 
 app.whenReady().then(() => {
