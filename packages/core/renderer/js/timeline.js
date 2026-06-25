@@ -180,13 +180,12 @@ function renderClip(track, clip, P, sel) {
         strip.appendChild(el('div', { class: 'film-cell', style: url ? `background-image:url(${url})` : '' }));
       }
       children.push(strip);
-      // 音声を分離した動画は映像のみ（波形は音声トラック側で表示＝別タイムライン）。
-      // 分離していない動画のみ、下部に波形を重ねる。
-      if (m.hasAudio !== false && !clip.detachedAudio) {
+      // 動画は映像＋音声を1本の帯で表示：下部に音声波形を重ねる（音声を持つ素材のみ）。
+      if (m.hasAudio !== false) {
         ensureWaveform(m);
         const wh = 16;
         const wc = el('canvas', { class: 'clip-wave clip-wave-video', width: Math.max(1, Math.round(width)), height: wh });
-        drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(120,200,255,0.85)');
+        drawClipWaveform(wc, m.id, clip.in, clip.out, 'rgba(120,200,255,0.9)');
         children.push(wc);
       }
     } else if (clip.kind === 'image') {
