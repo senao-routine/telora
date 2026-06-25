@@ -116,6 +116,7 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-25: **リンク音声の仕上げ（D）**。映像↔音声を「移動」に加え「トリム・前後カット・分割」でも連動。特に分割は相手も同位置で分割し左右を対応づけ、右半分も detachedAudio を維持（二重音声の再発を防止）。インスペクタに「🔓 リンクを解除」を追加（個別編集可能に・解除後も detach 維持）。分割2/2・区間一致・カット連動・解除を検証、windowErrors 0。
 - 2026-06-24: **③実LLM通電の事前修正**。Anthropic API の交互制約に対応：(1) 1ターン複数ツールの tool_result を1つの user にまとめる、(2) オーケストレータが最終 assistant 応答を履歴に残し、次ターンの user 連続を防止。整形を純粋関数 `main/llm-format.js` に抽出し node で単体検証（2ターン/複数ツールとも role 交互・tool_result 統合を確認）。実APIキー設定後の通電待ち。
 - 2026-06-23: **二重音声バグ修正＋映像/音声の完全分離表示**。原因＝非ベース動画(trackVideoEls)が `muted=false` でリンク音声と二重再生していた→ detachedAudio/トラックミュート時に動画側 `<video>` を muted（ベース・非ベース両方）。動画クリップは分離時に波形バンドを出さず映像のみ（波形は音声トラック側）。音声クリップの波形を明るく・高く（高さ48・明色・装飾ストライプを抑制）して「しっかり表示」。base/非ベース両ケースで muted・windowErrors 0 を検証。
 - 2026-06-23: **動画＝音声リンク（自動追加）**。動画を配置すると、その音声を波形付きの音声クリップとして音声トラックへ自動追加（`attachLinkedAudio`）。動画側の音声は分離（`detachedAudio`）してプレビュー/書き出しの二重再生を防止（preview ミュート・export base concat 無音・非ベース audioClips 除外）。映像/音声は `linkedAudioId/linkedVideoId` で対応づけ、削除・移動はセットで連動（timeline ドラッグ＋EditCommands.moveClip）。共有コアのため①②③に反映。実書き出し・状態で検証、windowErrors 0。

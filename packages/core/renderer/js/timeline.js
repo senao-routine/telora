@@ -440,6 +440,7 @@ function onUp() {
   if (drag.kind === 'range') { drag = null; return; } // 範囲は保持
   const wasEdit = drag.kind !== 'scrub';
   const wasMove = drag.kind === 'move';
+  const wasTrim = drag.kind === 'trim';
   const trackId = drag.trackId;
   const movedClipId = drag.clipId;
   const groupIds = drag.group;
@@ -464,14 +465,14 @@ function onUp() {
       const track = trackId ? getTrack(trackId) : null;
       if (track) { track.clips.sort((a, b) => a.start - b.start); if (movedClipId) resolveOverwrite(track, [movedClipId]); }
     }
-    // リンクした映像/音声をセットで移動（片方を動かしたらもう片方も同じ開始位置へ追従）
-    if (wasMove && !groupIds && movedClipId) syncLinkedPartner(movedClipId);
+    // リンクした映像/音声をセットで移動・トリム（片方を動かす/端を詰めたらもう片方も追従）
+    if ((wasMove || wasTrim) && !groupIds && movedClipId) syncLinkedPartner(movedClipId);
     emit('project');
   }
   if (!isPlaying()) seek(getPlayhead());
 }
 
-// リンク相手（detachedAudio の映像とその音声クリップ）を同じ開始位置へ揃える
+// リンク相手（detachedAudio の映像とその音声クリップ）の位置と素材区間（in/out/start）を揃える
 function syncLinkedPartner(clipId) {
   const f = getTrackClip(clipId);
   if (!f || !f.clip) return;
@@ -479,10 +480,9 @@ function syncLinkedPartner(clipId) {
   if (!partnerId) return;
   const pf = getTrackClip(partnerId);
   if (!pf || !pf.clip) return;
-  if (Math.abs(pf.clip.start - f.clip.start) < 1e-6) return;
-  const d = pf.clip.kind === 'text' ? (pf.clip.end - pf.clip.start) : 0;
-  pf.clip.start = Math.max(0, f.clip.start);
-  if (pf.clip.kind === 'text') pf.clip.end = pf.clip.start + d;
+  const c = f.clip, pc = pf.clip;
+  if (pc.kind === 'text') { const d = pc.end - pc.start; pc.start = Math.max(0, c.start); pc.end = pc.start + d; }
+  else { pc.start = Math.max(0, c.start); if (c.kind !== 'text') { if (c.in != null) pc.in = c.in; if (c.out != null) pc.out = c.out; if (c.speed != null) pc.speed = c.speed; } }
   pf.track.clips.sort((a, b) => a.start - b.start);
   resolveOverwrite(pf.track, [partnerId]);
 }

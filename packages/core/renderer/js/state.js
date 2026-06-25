@@ -458,6 +458,23 @@ export function toggleTrackMute(id) {
   return !!tr.muted;
 }
 
+// 映像↔音声のリンクを解除（独立して移動/削除できるようにする）。detachedAudio は維持＝音声は二重化しない。
+export function unlinkLinkedClip(clipId) {
+  let changed = false;
+  mutate((p) => {
+    let c = null;
+    for (const t of p.tracks) { const x = t.clips.find((y) => y.id === clipId); if (x) { c = x; break; } }
+    if (!c) return;
+    const partnerId = c.linkedAudioId || c.linkedVideoId;
+    if (partnerId) {
+      for (const t of p.tracks) { const pc = t.clips.find((y) => y.id === partnerId); if (pc) { delete pc.linkedAudioId; delete pc.linkedVideoId; break; } }
+    }
+    delete c.linkedAudioId; delete c.linkedVideoId;
+    changed = true;
+  });
+  return changed;
+}
+
 // ---- マーカー ----
 export function getMarkers() { return state.project.markers || (state.project.markers = []); }
 export function toggleMarkerAtPlayhead() {
