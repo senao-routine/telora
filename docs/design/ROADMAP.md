@@ -7,7 +7,7 @@
 - **最終更新**: 2026-06-25
 - **現在のフェーズ**: フェーズ0〜3 完了 ✅ → **3モデル（①②③）すべて起動可能・主要編集機能も実装済み**
 - **直近の方針**: 動画は「映像＋音声を1本の帯（波形バンド付きクリップ）」で表示。音声の自動分離は撤回。音声単体素材は音声トラックへ。
-- **残り**: (1) ③の実LLM E2E＝ユーザーのAPIキー設定が必要（コードは実装＋整形バグ修正済み・未通電）。(2) 任意の仕上げ＝②MCPの実クライアント接続確認・配布ビルド(electron-builder)・長時間処理のジョブ化・未使用のリンク連動コード(split/trim/move/delete link・unlink)の整理。
+- **残り**: (1) ③の実LLM＝コード経路はモックでE2E検証済み・⚙に接続テスト追加。あとはユーザーが実APIキーを⚙へ入力するだけ。(2) 任意の仕上げ＝②MCPの実クライアント接続確認・配布ビルド(electron-builder)・長時間処理のジョブ化・未使用のリンク連動コード(split/trim/move/delete link・unlink)の整理。
 - **起動**: `npm run start:base`（①）／`npm run start:mcp`（②・MCP `http://127.0.0.1:19790/mcp`）／`npm run start:chat`（③・右下「🤖 AIチャット」）
 - **設計書**: [00 全体/構成](./00-overview-and-structure.md) ・ [01 ベース](./01-base-editor.md) ・ [02 MCP](./02-local-mcp.md) ・ [03 AIチャット](./03-ai-chat.md)
 
@@ -99,7 +99,9 @@
 - [x] APIキー設定UI（⚙モーダル。キーは main userData に保存・renderer/プロジェクトに出さない・オプトイン）
 - [x] 複合指示の多ターン化（ツール実行→結果を次ターンへ）
 - [ ] develop へコミット
-- [ ] （要・実機）ユーザーのAPIキーを設定し、実LLMで「無音を全部消して」等のE2E確認（HTTP中継コードは実装済・キー未設定のため本セッションでは未通電）
+- [x] 実LLM経路のE2E検証：Anthropic応答形式を返すローカルモックに対し、実HTTP経路（chat-panel→orchestrator→llm-adapter→IPC→llm-proxy→HTTP→パース→ツール実行）で tool_use を実行し telop が実際に追加されることを確認（events: tool-result ok＋clipId）。
+- [x] ⚙設定に「🔌 接続テスト」ボタンを追加（ユーザーが自分のAPIキーの疎通を自己検証できる）。
+- [ ] （ユーザー側の最終手順）実際のAnthropic/OpenAIキーを⚙に入力し接続テスト→「無音を全部消して」等を実行。コードは検証済みのため、有効なキーがあれば動作する。
 
 ---
 
@@ -117,6 +119,7 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-25: **タスクA仕上げ（③実LLM）**。Anthropic応答形式のローカルモックに対し、実HTTP経路でE2E検証（tool_use→add_telop が実際に実行・telop追加を確認、windowErrors 0）。⚙設定に「🔌 接続テスト」ボタンを追加（キー疎通の自己検証）。コードは検証済みで、ユーザーが実APIキーを入れれば動作する状態に。
 - 2026-06-25: **方針変更：動画は映像＋音声を1本の帯で表示（自動分離をやめる）**。ユーザー要望で、動画追加時に音声を別トラックへ自動分離する挙動を撤回。動画クリップは波形バンド付きの1クリップとして表示し、自分の音声をそのまま再生（二重なし）。音声単体素材は従来どおり音声トラックへ。連動コード（split/trim/cut/move/delete link・unlink）は linkedAudioId/detachedAudio を持つクリップ限定のため、新規クリップでは発火せず no-op（dormant）。検証: 動画追加=1クリップ・波形バンドあり・分割で音声増えない・音声単体は音声トラック・windowErrors 0。
 - 2026-06-25: **リンク音声の仕上げ（D）**。映像↔音声を「移動」に加え「トリム・前後カット・分割」でも連動。特に分割は相手も同位置で分割し左右を対応づけ、右半分も detachedAudio を維持（二重音声の再発を防止）。インスペクタに「🔓 リンクを解除」を追加（個別編集可能に・解除後も detach 維持）。分割2/2・区間一致・カット連動・解除を検証、windowErrors 0。
 - 2026-06-24: **③実LLM通電の事前修正**。Anthropic API の交互制約に対応：(1) 1ターン複数ツールの tool_result を1つの user にまとめる、(2) オーケストレータが最終 assistant 応答を履歴に残し、次ターンの user 連続を防止。整形を純粋関数 `main/llm-format.js` に抽出し node で単体検証（2ターン/複数ツールとも role 交互・tool_result 統合を確認）。実APIキー設定後の通電待ち。

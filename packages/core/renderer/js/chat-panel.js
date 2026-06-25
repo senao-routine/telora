@@ -97,6 +97,23 @@ async function openSettings() {
   const modelIn = el('input', { type: 'text', class: 'chat-field', value: c.model || '', placeholder: '例: claude-sonnet-4-6 / gpt-4o-mini' });
   const keyIn = el('input', { type: 'password', class: 'chat-field', placeholder: c.hasKey ? '（設定済み・変更する場合のみ入力）' : 'APIキーを入力' });
   const baseIn = el('input', { type: 'text', class: 'chat-field', value: c.baseUrl || '', placeholder: 'ローカル/互換時のベースURL（任意）' });
+  const testResult = el('div', { class: 'chat-test-result' });
+  const save = async () => { // 入力中の設定を保存（接続テスト前にも保存しておく）
+    const cfg = { provider: provSel.value, model: modelIn.value.trim(), baseUrl: baseIn.value.trim() };
+    if (keyIn.value) cfg.apiKey = keyIn.value;
+    await window.api.llmConfigSet(cfg);
+  };
+  const testBtn = el('button', { class: 'btn' }, ['🔌 接続テスト']);
+  testBtn.onclick = async () => {
+    testBtn.disabled = true; testResult.textContent = '接続を確認しています…'; testResult.className = 'chat-test-result';
+    try {
+      await save(); // 入力値で保存してから試す
+      const res = await window.api.llmChat({ system: 'これは接続テストです。', timelineJson: '{}', messages: [{ role: 'user', content: 'OK とだけ短く返答してください。' }], tools: [] });
+      if (res && res.ok) { testResult.textContent = '✓ 接続OK（応答: ' + ((res.text || '').slice(0, 40) || '空') + '）'; testResult.className = 'chat-test-result ok'; }
+      else { testResult.textContent = '✗ 失敗: ' + ((res && res.error) || '不明なエラー'); testResult.className = 'chat-test-result err'; }
+    } catch (e) { testResult.textContent = '✗ 失敗: ' + String((e && e.message) || e); testResult.className = 'chat-test-result err'; }
+    finally { testBtn.disabled = false; refreshStatus(); }
+  };
   const overlay = el('div', { class: 'chat-modal-bg', onClick: (e) => { if (e.target === overlay) overlay.remove(); } }, [
     el('div', { class: 'chat-modal' }, [
       el('div', { class: 'chat-modal-title', text: 'AIチャット API設定' }),
@@ -106,13 +123,11 @@ async function openSettings() {
       el('label', { class: 'chat-lbl', text: 'ベースURL（任意・ローカル/互換用）' }), baseIn,
       el('p', { class: 'chat-note', text: '外部APIは任意（オプトイン）。キーはアプリ内部にのみ保存され、プロジェクトには含まれません。' }),
       el('div', { class: 'chat-modal-actions' }, [
-        el('button', { class: 'btn', onClick: () => overlay.remove() }, ['キャンセル']),
-        el('button', { class: 'btn btn-primary', onClick: async () => {
-          const cfg = { provider: provSel.value, model: modelIn.value.trim(), baseUrl: baseIn.value.trim() };
-          if (keyIn.value) cfg.apiKey = keyIn.value;
-          await window.api.llmConfigSet(cfg); overlay.remove(); refreshStatus();
-        } }, ['保存']),
+        testBtn,
+        el('button', { class: 'btn', onClick: () => overlay.remove() }, ['閉じる']),
+        el('button', { class: 'btn btn-primary', onClick: async () => { await save(); overlay.remove(); refreshStatus(); } }, ['保存']),
       ]),
+      testResult,
     ]),
   ]);
   document.body.appendChild(overlay);

@@ -453,3 +453,6 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 .chat-field:focus { outline: none; border-color: var(--accent); }
 .chat-note { font-size: 10.5px; color: var(--text-mute); line-height: 1.6; margin: 6px 0 2px; }
 .chat-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.chat-test-result { font-size: 11.5px; margin-top: 8px; color: var(--text-dim); min-height: 1em; }
+.chat-test-result.ok { color: var(--ok); }
+.chat-test-result.err { color: var(--danger); }
