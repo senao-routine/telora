@@ -155,18 +155,22 @@ function buildMenu() {
 function showMcpInfo() {
   let url = 'http://127.0.0.1:19790/mcp';
   try { url = require('./mcp-server').url(); } catch (_) {}
-  const detail = [
+  const token = process.env.TELORA_MCP_TOKEN || '';
+  const hdr = token ? ` --header "Authorization: Bearer ${token}"` : '';
+  const lines = [
     'お使いのAIエージェントから下記コマンドで接続すると、このタイムラインを操作できます。',
     '',
     `URL: ${url}`,
     '',
-    `Claude Code:  claude mcp add --transport http telora ${url}`,
+    `Claude Code:  claude mcp add --transport http telora ${url}${hdr}`,
     `Codex:        codex mcp add telora --url ${url}`,
     `Cursor / Claude Desktop: MCP設定に上記URL(HTTP)を追加`,
     '',
     '※ サーバは 127.0.0.1（ローカル）限定です。',
-  ].join('\n');
-  dialog.showMessageBox(mainWindow, { type: 'info', title: 'MCP接続情報', message: 'Telora ローカルMCPサーバ', detail, buttons: ['OK'] });
+  ];
+  if (token) lines.push('※ トークン認証が有効です（Authorization: Bearer ヘッダが必要）。');
+  else lines.push('※ トークン認証を使う場合は環境変数 TELORA_MCP_TOKEN を設定して起動してください。');
+  dialog.showMessageBox(mainWindow, { type: 'info', title: 'MCP接続情報', message: 'Telora ローカルMCPサーバ', detail: lines.join('\n'), buttons: ['OK'] });
 }
 
 // ---- IPC ハンドラ ----

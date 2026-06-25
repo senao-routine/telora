@@ -80,7 +80,8 @@
 - [x] **最小デモ達成**: 「無音を消す」が MCP 経由で通る（cut_silence made=2・実FFmpeg）
 - [x] モデル①無回帰・モデル分離確認（base は MCPポート開かず／model=base）
 - [ ] develop へコミット
-- [ ] （将来）長時間処理の本格ジョブ化（export/transcribe + `get_job_status`）・任意トークン認証・サーバON/OFFトグルUI
+- [x] **タスクB：実クライアント接続の仕様準拠強化＋検証**。MCP Streamable HTTP に準拠：initialize で `Mcp-Session-Id` 発行、protocolVersion エコー、`notifications/initialized`→202、GET→405(Allow: POST, DELETE)、DELETE→204、任意トークン認証（`TELORA_MCP_TOKEN` 設定時 Authorization: Bearer 必須）。実クライアント(Claude Code)の接続シーケンスを curl で忠実に再現し全ステップ成功・トークン認証も検証。接続情報メニューにトークン案内を追加。
+- [ ] （将来）長時間処理の本格ジョブ化（export/transcribe + `get_job_status`）・サーバON/OFFトグルUI
 
 ---
 
@@ -119,6 +120,7 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-25: **タスクB完成（②MCP実クライアント接続）**。MCP Streamable HTTP 準拠を強化（Mcp-Session-Id 発行・protocolVersionエコー・notifications/initialized→202・GET→405(Allow)・DELETE→204・任意トークン認証 TELORA_MCP_TOKEN）。実Claude Codeの接続手順を curl で忠実再現し全ステップ成功、トークン認証も検証。接続情報メニュー更新。
 - 2026-06-25: **タスクA仕上げ（③実LLM）**。Anthropic応答形式のローカルモックに対し、実HTTP経路でE2E検証（tool_use→add_telop が実際に実行・telop追加を確認、windowErrors 0）。⚙設定に「🔌 接続テスト」ボタンを追加（キー疎通の自己検証）。コードは検証済みで、ユーザーが実APIキーを入れれば動作する状態に。
 - 2026-06-25: **方針変更：動画は映像＋音声を1本の帯で表示（自動分離をやめる）**。ユーザー要望で、動画追加時に音声を別トラックへ自動分離する挙動を撤回。動画クリップは波形バンド付きの1クリップとして表示し、自分の音声をそのまま再生（二重なし）。音声単体素材は従来どおり音声トラックへ。連動コード（split/trim/cut/move/delete link・unlink）は linkedAudioId/detachedAudio を持つクリップ限定のため、新規クリップでは発火せず no-op（dormant）。検証: 動画追加=1クリップ・波形バンドあり・分割で音声増えない・音声単体は音声トラック・windowErrors 0。
 - 2026-06-25: **リンク音声の仕上げ（D）**。映像↔音声を「移動」に加え「トリム・前後カット・分割」でも連動。特に分割は相手も同位置で分割し左右を対応づけ、右半分も detachedAudio を維持（二重音声の再発を防止）。インスペクタに「🔓 リンクを解除」を追加（個別編集可能に・解除後も detach 維持）。分割2/2・区間一致・カット連動・解除を検証、windowErrors 0。

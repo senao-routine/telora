@@ -3,6 +3,7 @@
 // 各ツールを renderer の EditCommands へ IPC で橋渡しして実行する。
 // AIモデルはユーザー側エージェント（Claude Code / Cursor 等）任せ＝本体は無料/オフライン維持。
 const http = require('http');
+const crypto = require('crypto');
 const { ipcMain } = require('electron');
 
 const HOST = '127.0.0.1';
@@ -36,6 +37,7 @@ let server = null;
 let getWindow = null;
 const pending = new Map();
 let seq = 0;
+const sessions = new Set(); // 発行済み Mcp-Session-Id
 
 const serverUrl = () => `http://${HOST}:${PORT}/mcp`;
 
@@ -92,9 +94,9 @@ async function handleOne(msg) {
   }
 }
 
-function sendJson(res, status, obj) {
+function sendJson(res, status, obj, extraHeaders) {
   const body = Buffer.from(JSON.stringify(obj));
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': body.length });
+  res.writeHead(status, Object.assign({ 'Content-Type': 'application/json', 'Content-Length': body.length }, extraHeaders || {}));
   res.end(body);
 }
 
@@ -109,8 +111,18 @@ function start(windowGetter) {
     // ループバック以外は拒否（DNSリバインド/外部アクセス対策）
     const ra = req.socket.remoteAddress || '';
     if (!(ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1')) { res.writeHead(403); res.end('forbidden'); return; }
-    if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Telora MCP server. POST JSON-RPC 2.0 to /mcp'); return; }
-    if (req.method !== 'POST') { res.writeHead(405); res.end('method not allowed'); return; }
+    // 任意トークン認証：TELORA_MCP_TOKEN 設定時のみ Authorization: Bearer を要求
+    const token = process.env.TELORA_MCP_TOKEN || '';
+    if (token && (req.headers.authorization || '') !== 'Bearer ' + token) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'unauthorized' } }));
+      return;
+    }
+    // GET: サーバ起点の SSE ストリームは提供しないため 405（MCP Streamable HTTP 仕様準拠）
+    if (req.method === 'GET') { res.writeHead(405, { Allow: 'POST, DELETE', 'Content-Type': 'text/plain' }); res.end('Telora MCP: POST JSON-RPC 2.0 to /mcp'); return; }
+    // DELETE: セッション終了
+    if (req.method === 'DELETE') { const sid = req.headers['mcp-session-id']; if (sid) sessions.delete(sid); res.writeHead(204); res.end(); return; }
+    if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST, DELETE' }); res.end('method not allowed'); return; }
 
     let data = '';
     req.on('data', (c) => { data += c; if (data.length > 8 * 1024 * 1024) req.destroy(); });
@@ -118,14 +130,17 @@ function start(windowGetter) {
       let msg;
       try { msg = JSON.parse(data || '{}'); } catch (_) { sendJson(res, 200, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); return; }
       try {
+        // initialize には Mcp-Session-Id を発行して返す（実クライアントのセッション管理に対応）
+        const extra = {};
+        if (!Array.isArray(msg) && msg && msg.method === 'initialize') { const sid = crypto.randomBytes(16).toString('hex'); sessions.add(sid); extra['Mcp-Session-Id'] = sid; }
         if (Array.isArray(msg)) { // JSON-RPC バッチ
           const out = (await Promise.all(msg.map(handleOne))).filter(Boolean);
           if (!out.length) { res.writeHead(202); res.end(); return; }
           sendJson(res, 200, out);
         } else {
           const out = await handleOne(msg);
-          if (!out) { res.writeHead(202); res.end(); return; } // 通知
-          sendJson(res, 200, out);
+          if (!out) { res.writeHead(202); res.end(); return; } // 通知（notifications/initialized 等）
+          sendJson(res, 200, out, extra);
         }
       } catch (e) { sendJson(res, 200, { jsonrpc: '2.0', id: null, error: { code: -32603, message: String(e) } }); }
     });
