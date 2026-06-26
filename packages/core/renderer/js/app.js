@@ -40,12 +40,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   wirePanelResize();
   wireHome();
   applyLibView();
-  // モデル②: MCP ブリッジを起動（外部AIエージェントの操作を EditCommands へ橋渡し）
-  if (window.api && window.api.model === 'mcp') {
+  // ②MCP / AI版: MCP ブリッジを起動（外部AIエージェントの操作を EditCommands へ橋渡し）
+  const _model = (window.api && window.api.model) || 'base';
+  if (_model === 'mcp' || _model === 'ai') {
     import('./mcp-bridge.js').then((m) => m.initMcpBridge()).catch((e) => console.log('[mcp-bridge] load failed', e));
   }
-  // モデル③: アプリ内AIチャットパネルを起動
-  if (window.api && window.api.model === 'chat') {
+  // ③チャット / AI版: アプリ内AIチャットパネルを起動
+  if (_model === 'chat' || _model === 'ai') {
     import('./chat-panel.js').then((m) => m.initChatPanel()).catch((e) => console.log('[chat-panel] load failed', e));
   }
   // ポップオーバーの外側クリック / Esc で閉じる

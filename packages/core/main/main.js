@@ -140,8 +140,8 @@ function buildMenu() {
         { role: 'togglefullscreen', label: 'フルスクリーン' },
       ],
     },
-    // モデル②: AIエージェント接続情報メニュー
-    ...(MODEL === 'mcp' ? [{
+    // ②MCP / AI版: AIエージェント接続情報メニュー
+    ...((MODEL === 'mcp' || MODEL === 'ai') ? [{
       label: 'AI接続',
       submenu: [
         { label: 'MCP接続情報を表示…', click: () => showMcpInfo() },
@@ -387,8 +387,8 @@ ipcMain.handle('open-external', async (_e, url) => {
 
 app.whenReady().then(() => {
   createWindow();
-  // モデル②: ローカル MCP サーバを起動（外部AIエージェントがタイムラインを操作）。
-  if (MODEL === 'mcp') {
+  // ②MCP / AI版: ローカル MCP サーバを起動（外部AIエージェントがタイムラインを操作）。
+  if (MODEL === 'mcp' || MODEL === 'ai') {
     try {
       const mcp = require('./mcp-server');
       const info = mcp.start(() => mainWindow);
