@@ -6,6 +6,7 @@ import {
 } from './state.js';
 import { toast } from './ui.js';
 import { ensureWaveform } from './waveform.js';
+import { showContextMenu } from './context-menu.js';
 
 const VIDEO_EXT = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'ts'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'];
@@ -292,12 +293,36 @@ export function renderMediaBin() {
       el('button', { class: 'media-add', title: 'タイムラインに追加', onClick: (e) => { e.stopPropagation(); addClipFromMedia(m.id); } }, ['＋']),
     ]);
     item.addEventListener('dblclick', () => addClipFromMedia(m.id));
+    // 右クリック／2本指タップ＝素材メニュー
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: '＋ タイムラインに追加', onClick: () => addClipFromMedia(m.id) },
+        { label: '📂 ファイルの場所を表示', onClick: () => { try { window.api.showItem(m.path); } catch (_) {} } },
+        { sep: true },
+        { label: '🗑 素材をプロジェクトから削除', danger: true, onClick: () => removeMediaFromProject(m.id) },
+      ]);
+    });
     item.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/media-id', m.id);
       e.dataTransfer.effectAllowed = 'copy';
     });
     list.appendChild(item);
   }
+}
+
+// 素材をプロジェクトから削除（タイムライン上の該当クリップも併せて削除）
+export function removeMediaFromProject(mediaId) {
+  const m = mediaById(mediaId);
+  if (!m) return;
+  if (!confirm(`「${m.name}」をプロジェクトから削除しますか？\n（タイムライン上のこの素材のクリップも削除されます）`)) return;
+  mutate((p) => {
+    for (const t of p.tracks) t.clips = t.clips.filter((c) => c.mediaId !== mediaId);
+    p.media = p.media.filter((x) => x.id !== mediaId);
+  });
+  setSelection(null);
+  renderMediaBin();
+  toast(`「${m.name}」を削除しました`);
 }
 
 // プロジェクト読込後などのサムネイル一括生成

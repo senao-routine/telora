@@ -9,7 +9,9 @@ import {
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
 import { getFrame, requestFrame, FRAME_W } from './filmstrip.js';
-import { resolveOverwrite } from './edit.js';
+import { resolveOverwrite, splitAtPlayhead, cutBefore, cutAfter, duplicateSelection, deleteSelection } from './edit.js';
+import { silenceCut, fillerCut } from './cut-tools.js';
+import { showContextMenu } from './context-menu.js';
 import { seek } from './preview.js';
 
 const MIN_TEXT = 0.2;
@@ -216,7 +218,37 @@ function renderClip(track, clip, P, sel) {
     setSelection({ trackId: track.id, clipId: clip.id });
     emit('edit-focus', clip.id);
   });
+  // 右クリック／2本指タップ＝編集メニュー
+  node.addEventListener('contextmenu', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setSelection({ trackId: track.id, clipId: clip.id });
+    showContextMenu(e.clientX, e.clientY, clipContextItems(track, clip));
+  });
   return node;
+}
+
+// クリップ右クリックメニューの項目（種別に応じて出し分け）
+function clipContextItems(track, clip) {
+  const sel = () => setSelection({ trackId: track.id, clipId: clip.id });
+  const items = [
+    { label: '✏️ プロパティを編集', onClick: () => { sel(); emit('edit-focus', clip.id); } },
+    { sep: true },
+    { label: '✂ 再生位置で分割', onClick: () => { sel(); splitAtPlayhead(); } },
+    { label: '⟕ 再生位置より前をカット', onClick: () => { sel(); cutBefore(); } },
+    { label: '⟖ 再生位置より後ろをカット', onClick: () => { sel(); cutAfter(); } },
+    { label: '⧉ 複製', onClick: () => { sel(); duplicateSelection(); } },
+  ];
+  if (clip.kind === 'video' || clip.kind === 'audio') {
+    const m = mediaById(clip.mediaId);
+    if (m && m.hasAudio !== false) {
+      items.push({ sep: true });
+      items.push({ label: '🔇 無音をカット', onClick: () => silenceCut(clip.id) });
+      items.push({ label: '🗣 フィラーをカット', onClick: () => fillerCut(clip.id) });
+    }
+  }
+  items.push({ sep: true });
+  items.push({ label: '🗑 削除', danger: true, onClick: () => { sel(); deleteSelection(); } });
+  return items;
 }
 
 function renderSelectionOnly() {

@@ -115,7 +115,13 @@ function wireHome() {
 
 function wireTopbar() {
   $('btnTranscribe').onclick = () => runTranscribe();
-  $('btnProxy').onclick = async () => { const on = await toggleProxy(); $('btnProxy').classList.toggle('active', on); };
+  $('btnProxy').onclick = async () => {
+    const on = await toggleProxy();
+    $('btnProxy').classList.toggle('active', on);
+    toast(on
+      ? '軽量プレビューON：重い動画を低解像度コピーでサクサク編集できます（書き出しは元の高画質）'
+      : '軽量プレビューOFF：元の高画質でプレビューします（重い場合あり）', 'ok');
+  };
   $('btnProxy').classList.toggle('active', proxyEnabled());
   $('btnOpen').onclick = () => openProject();
   $('btnSave').onclick = () => saveProject();
