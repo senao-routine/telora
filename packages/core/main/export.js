@@ -6,11 +6,32 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-// FFmpeg / FFprobe の解決。GUI 起動時はシェルの PATH を継承しないことがあるため、
-// 環境変数 → よくあるインストール先（Homebrew 等）→ 素の名前 の順で探す。
+// 同梱バイナリ（ffmpeg/ffprobe/whisper-cli・モデル）の置き場所を解決する。
+// 配布版(packaged): <app>/Contents/Resources/vendor/<plat>-<arch>
+// 開発時:           <repo>/vendor/<plat>-<arch>
+// 見つからなければ null（＝システム側へフォールバック）。
+function vendorDir() {
+  const platMap = { darwin: 'mac', win32: 'win', linux: 'linux' };
+  const sub = `${platMap[process.platform] || process.platform}-${process.arch}`;
+  const candidates = [];
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'vendor', sub));
+  candidates.push(path.join(__dirname, '..', '..', '..', 'vendor', sub)); // packages/core/main → repo ルート
+  for (const c of candidates) { try { if (fs.existsSync(c)) return c; } catch (_) { /* noop */ } }
+  return null;
+}
+
+// FFmpeg / FFprobe の解決。
+// 同梱版(vendor)があれば最優先＝配布版を自己完結に。次に 環境変数 →
+// GUI 起動時に PATH を継承しない場合に備えたよくあるインストール先（Homebrew 等）→ 素の名前。
 function resolveBin(name) {
   const envOverride = process.env[`${name.toUpperCase()}_PATH`];
   if (envOverride) return envOverride;
+  const vd = vendorDir();
+  if (vd) {
+    const exe = process.platform === 'win32' ? `${name}.exe` : name;
+    const bundled = path.join(vd, exe);
+    try { if (fs.existsSync(bundled)) return bundled; } catch (_) { /* noop */ }
+  }
   if (process.platform === 'win32') return name;
   const candidates = [
     `/opt/homebrew/bin/${name}`, // Apple Silicon Homebrew
@@ -667,4 +688,4 @@ async function saveRecording(base64, ext = 'webm') {
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 }
 
-module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, audioPeaks, detectSilence, saveRecording, FFMPEG, FFPROBE };
+module.exports = { checkTools, probe, exportTimeline, extractFrame, makeProxy, extractAudio, audioPeaks, detectSilence, saveRecording, FFMPEG, FFPROBE, vendorDir };

@@ -6,7 +6,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { FFMPEG, probe } = require('./export');
+const { FFMPEG, probe, vendorDir } = require('./export');
 
 // GUI 起動時に PATH が貧弱でも検出できるよう、よくある場所を補う
 const EXTRA_PATHS = [
@@ -35,10 +35,24 @@ function binExists(bin) {
   });
 }
 
+// 同梱 whisper.cpp（whisper-cli）＋同梱モデルを最優先で使う＝配布版を自己完結（無料・オフライン・高精度）に。
+const BUNDLED_MODEL = 'ggml-large-v3-turbo.bin';
+function bundledWhisper() {
+  const vd = typeof vendorDir === 'function' ? vendorDir() : null;
+  if (!vd) return null;
+  const exe = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
+  const bin = path.join(vd, exe);
+  const model = path.join(vd, 'models', BUNDLED_MODEL);
+  try { if (fs.existsSync(bin) && fs.existsSync(model)) return { type: 'cpp', bin, model, bundled: true }; } catch (_) { /* noop */ }
+  return null;
+}
+
 function findWhisperModel() {
   const cands = [];
   if (process.env.WHISPER_MODEL) cands.push(process.env.WHISPER_MODEL);
+  const vd = typeof vendorDir === 'function' ? vendorDir() : null;
   const dirs = [
+    ...(vd ? [path.join(vd, 'models')] : []),
     path.join(os.homedir(), '.cache/whisper'),
     path.join(os.homedir(), 'Library/Application Support/whisper-cpp/models'),
     '/opt/homebrew/share/whisper-cpp/models',
@@ -65,6 +79,8 @@ function rankModel(name) {
 
 // 利用可能なエンジンを検出
 async function detectEngine() {
+  const bundled = bundledWhisper();
+  if (bundled) return bundled; // 配布版：同梱 whisper.cpp + large-v3-turbo を最優先
   if (await binExists('whisper')) return { type: 'openai', bin: 'whisper' };
   for (const b of ['whisper-cli', 'whisper-cpp']) {
     // eslint-disable-next-line no-await-in-loop
