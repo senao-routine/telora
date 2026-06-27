@@ -30,7 +30,10 @@ const TOOLS = [
   { name: 'export_video', cmd: 'export', description: '動画を書き出す。outputPath（絶対パス）必須。', schema: { type: 'object', properties: { outputPath: { type: 'string' }, format: { type: 'string' }, quality: { type: 'string' } }, required: ['outputPath'] } },
   { name: 'undo', cmd: 'undo', description: '直前の編集を元に戻す。', schema: { type: 'object', properties: {} } },
   { name: 'redo', cmd: 'redo', description: '元に戻した編集をやり直す。', schema: { type: 'object', properties: {} } },
+  { name: 'get_job_status', cmd: '__job__', description: '時間のかかる処理（書き出し/文字起こし/無音カット等）はジョブIDが返るので、これで完了を確認する。', schema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] } },
 ];
+// ジョブ化する重いコマンド（即 jobId を返し、get_job_status でポーリング）
+const LONG_CMDS = new Set(['export', 'cutFillers', 'cutSilence', 'importMedia']);
 const CMD_BY_TOOL = Object.fromEntries(TOOLS.map((t) => [t.name, t.cmd]));
 
 let server = null;
@@ -38,6 +41,7 @@ let getWindow = null;
 const pending = new Map();
 let seq = 0;
 const sessions = new Set(); // 発行済み Mcp-Session-Id
+const jobs = new Map();      // jobId -> { status:'running'|'done'|'error', result?, error?, tool, startedAt }
 
 const serverUrl = () => `http://${HOST}:${PORT}/mcp`;
 
@@ -71,13 +75,36 @@ async function dispatch(method, params) {
   }
   if (method === 'tools/call') {
     const name = params && params.name;
+    const args = (params && params.arguments) || {};
+    const asText = (obj, isError) => ({ content: [{ type: 'text', text: typeof obj === 'string' ? obj : JSON.stringify(obj) }], ...(isError ? { isError: true } : {}) });
+
+    // ジョブ状態の問い合わせ
+    if (name === 'get_job_status') {
+      const job = jobs.get(args.jobId);
+      if (!job) return asText({ error: 'unknown jobId: ' + args.jobId }, true);
+      const payload = { jobId: args.jobId, status: job.status, tool: job.tool };
+      if (job.status === 'done') payload.result = job.result;
+      if (job.status === 'error') payload.error = job.error;
+      return asText(payload, job.status === 'error');
+    }
+
     const cmd = CMD_BY_TOOL[name];
-    if (!cmd) return { content: [{ type: 'text', text: 'unknown tool: ' + name }], isError: true };
-    // 書き出し・文字起こし系は FFmpeg/Whisper で時間がかかるためタイムアウトを長く取る
-    const LONG = new Set(['export', 'cutFillers', 'cutSilence', 'importMedia']);
-    const res = await callRenderer(cmd, (params && params.arguments) || {}, LONG.has(cmd) ? 600000 : 30000);
-    if (res && res.ok) return { content: [{ type: 'text', text: JSON.stringify(res.result == null ? { ok: true } : res.result) }] };
-    return { content: [{ type: 'text', text: String((res && res.error) || 'command failed') }], isError: true };
+    if (!cmd) return asText('unknown tool: ' + name, true);
+
+    // 重い処理はジョブ化：即 jobId を返し、バックグラウンド実行。get_job_status でポーリング。
+    if (LONG_CMDS.has(cmd)) {
+      const jobId = 'job_' + crypto.randomBytes(6).toString('hex');
+      jobs.set(jobId, { status: 'running', tool: name, startedAt: Date.now() });
+      callRenderer(cmd, args, 1800000) // 最大30分
+        .then((res) => { jobs.set(jobId, { status: (res && res.ok) ? 'done' : 'error', tool: name, result: res && res.ok ? (res.result == null ? { ok: true } : res.result) : undefined, error: res && res.ok ? undefined : ((res && res.error) || 'failed') }); })
+        .catch((e) => { jobs.set(jobId, { status: 'error', tool: name, error: String((e && e.message) || e) }); });
+      return asText({ jobId, status: 'running', note: 'これは時間のかかる処理です。get_job_status に jobId=' + jobId + ' を渡して完了を確認してください。' });
+    }
+
+    // 短い処理は同期実行
+    const res = await callRenderer(cmd, args, 30000);
+    if (res && res.ok) return asText(res.result == null ? { ok: true } : res.result);
+    return asText(String((res && res.error) || 'command failed'), true);
   }
   const err = new Error('Method not found: ' + method); err.code = -32601; throw err;
 }
@@ -151,5 +178,6 @@ function start(windowGetter) {
 }
 
 function stop() { if (server) { try { server.close(); } catch (_) {} server = null; } }
+function isRunning() { return !!server; }
 
-module.exports = { start, stop, url: serverUrl, TOOLS };
+module.exports = { start, stop, isRunning, url: serverUrl, TOOLS };

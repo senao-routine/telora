@@ -81,7 +81,8 @@
 - [x] モデル①無回帰・モデル分離確認（base は MCPポート開かず／model=base）
 - [ ] develop へコミット
 - [x] **タスクB：実クライアント接続の仕様準拠強化＋検証**。MCP Streamable HTTP に準拠：initialize で `Mcp-Session-Id` 発行、protocolVersion エコー、`notifications/initialized`→202、GET→405(Allow: POST, DELETE)、DELETE→204、任意トークン認証（`TELORA_MCP_TOKEN` 設定時 Authorization: Bearer 必須）。実クライアント(Claude Code)の接続シーケンスを curl で忠実に再現し全ステップ成功・トークン認証も検証。接続情報メニューにトークン案内を追加。
-- [ ] （将来）長時間処理の本格ジョブ化（export/transcribe + `get_job_status`）・サーバON/OFFトグルUI
+- [x] **タスクE：長時間処理のジョブ化**。MCPで重い処理（export/cut_fillers/cut_silence/import_media）は即 `jobId` を返してバックグラウンド実行し、`get_job_status` でポーリング完了（短い処理は従来どおり同期）。curlで import_media→poll→add_clip→cut_silence(made=2)→get_timeline を検証。
+- [x] **MCPサーバ ON/OFF トグル**。メニュー「AI接続 → MCPサーバを開始/停止」で起動中の稼働を切替（停止でポート閉、開始で再開）。isRunning/stop/start を mcp-server に追加。
 
 ---
 
@@ -120,6 +121,7 @@
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
 - 2026-06-23: **フェーズ1完了**。`commands/edit-commands.js`（18コマンド・`run`/`listCommands`）新設。export-ui.js から `buildExportPayload` を抽出（runExport と共有）。eval ハーネスで全コマンド検証（無音カット・書き出しは実FFmpeg）・windowErrors 0。次はフェーズ2（MCP）。
+- 2026-06-27: **タスクE（長時間処理ジョブ化）＋MCPサーバON/OFF**。MCPの重い処理(export/cut_fillers/cut_silence/import_media)を即jobId返し＋バックグラウンド実行に変更、`get_job_status` でポーリング（短い処理は同期維持）。curlで import_media→poll→add_clip→cut_silence(made=2)→get_timeline をE2E検証。tools=20（get_job_status追加）。MCPサーバの開始/停止をメニュー「AI接続」からトグル可能に（isRunning/stop/start）。
 - 2026-06-27: **タスクF：未使用リンク連動コードの整理**。「映像＋音声1本化」で不要になった `detachedAudio`/`linkedAudioId`/`linkedVideoId` 関連を全削除（edit.js の mirrorLinkedGeometry/splitLinkedPartner・deleteSelectionのlink収集、timeline.js の syncLinkedPartner、edit-commands.js の moveClip相手同期、state.js の unlinkLinkedClip、inspector.js のリンク解除UI、preview/export-ui/export.js の分離分岐）。track.muted は維持。残存参照ゼロ・全構文OK・無回帰（動画1クリップ/分割/前カット/複製/move/削除/音声単体・windowErrors 0）。
 - 2026-06-26: **②③合体「AI版」＋右クリックメニュー＋プロキシ明確化**。(1) `apps/ai`（model='ai'）で MCPサーバとアプリ内チャットを両方ON＝1アプリで「自分のAIエージェント接続」も「アプリ内AIチャット」も使える（base/mcp/chat も維持）。(2) タイムラインのクリップとメディア素材を右クリック／2本指タップで編集メニュー（分割/前後カット/複製/無音・フィラーカット/プロパティ/削除、素材は追加/場所表示/削除）。共通部品 `context-menu.js`。(3) プロキシを「⚡ 軽量プレビュー」に改称し、ツールバー説明とトグル時トーストで「重い動画を低解像度コピーで軽く編集・書き出しは高画質」を明示。AI版上で全機能の動作・windowErrors 0 を確認。
 - 2026-06-25: **タスクB完成（②MCP実クライアント接続）**。MCP Streamable HTTP 準拠を強化（Mcp-Session-Id 発行・protocolVersionエコー・notifications/initialized→202・GET→405(Allow)・DELETE→204・任意トークン認証 TELORA_MCP_TOKEN）。実Claude Codeの接続手順を curl で忠実再現し全ステップ成功、トークン認証も検証。接続情報メニュー更新。

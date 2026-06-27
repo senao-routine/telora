@@ -145,10 +145,25 @@ function buildMenu() {
       label: 'AI接続',
       submenu: [
         { label: 'MCP接続情報を表示…', click: () => showMcpInfo() },
+        { type: 'separator' },
+        { label: (mcpRunning() ? 'MCPサーバを停止' : 'MCPサーバを開始'), click: () => toggleMcpServer() },
       ],
     }] : []),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// MCPサーバの稼働状態（メニュー表示用）
+function mcpRunning() { try { return require('./mcp-server').isRunning(); } catch (_) { return false; } }
+// MCPサーバの開始/停止トグル（メニューラベルも更新）
+function toggleMcpServer() {
+  try {
+    const mcp = require('./mcp-server');
+    if (mcp.isRunning()) { mcp.stop(); } else { mcp.start(() => mainWindow); }
+    buildMenu(); // メニューのラベル（開始/停止）を更新
+    const running = mcp.isRunning();
+    dialog.showMessageBox(mainWindow, { type: 'info', title: 'MCPサーバ', message: running ? 'MCPサーバを開始しました' : 'MCPサーバを停止しました', detail: running ? mcp.url() : 'AIエージェントからの接続を受け付けません。', buttons: ['OK'] });
+  } catch (e) { console.log('[mcp] toggle failed: ' + e); }
 }
 
 // MCP接続情報ダイアログ（各AIクライアントの登録コマンドを案内）
