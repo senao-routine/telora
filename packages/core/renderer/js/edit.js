@@ -60,45 +60,6 @@ function targetClipAtPlayhead() {
 }
 
 // 分割
-// リンク相手（映像↔音声）の幾何（in/out/start/speed）を c に合わせる（mutate 内から呼ぶ）。
-// トリム・前後カット時に、もう片方も同じ素材区間/位置へ追従させる。
-function mirrorLinkedGeometry(p, c) {
-  const partnerId = c && (c.linkedAudioId || c.linkedVideoId);
-  if (!partnerId) return;
-  for (const tr of p.tracks) {
-    const pc = tr.clips.find((x) => x.id === partnerId);
-    if (!pc) continue;
-    if (pc.kind === 'text') { const d = pc.end - pc.start; pc.start = Math.max(0, c.start); pc.end = pc.start + d; }
-    else { pc.start = Math.max(0, c.start); if (c.kind !== 'text') { if (c.in != null) pc.in = c.in; if (c.out != null) pc.out = c.out; if (c.speed != null) pc.speed = c.speed; } }
-    tr.clips.sort((a, b) => a.start - b.start);
-    return;
-  }
-}
-
-// 分割時、リンク相手も同じ位置で分割し、左右どうしを対応づけ直す（detachedAudio を維持＝二重音声を防ぐ）。
-function splitLinkedPartner(p, c, second, t) {
-  if (c.kind === 'text') return;
-  const partnerId = c.linkedAudioId || c.linkedVideoId;
-  if (!partnerId) return;
-  let pTrack = null, pClip = null, pIdx = -1;
-  for (const tr of p.tracks) { const i = tr.clips.findIndex((x) => x.id === partnerId); if (i >= 0) { pTrack = tr; pClip = tr.clips[i]; pIdx = i; break; } }
-  if (!pClip || pClip.kind === 'text') return;
-  const pLocal = t - pClip.start;
-  if (pLocal <= MIN || pLocal >= clipDur(pClip) - MIN) return;
-  const pSplit = pClip.in + pLocal * clipSpeed(pClip);
-  const pSecond = { id: uid('clip'), kind: pClip.kind, mediaId: pClip.mediaId, in: pSplit, out: pClip.out, start: t, speed: pClip.speed, volume: pClip.volume, fadeIn: 0, fadeOut: pClip.fadeOut, transform: pClip.transform ? Object.assign({}, pClip.transform) : undefined };
-  pClip.out = pSplit; pClip.fadeOut = 0;
-  pTrack.clips.splice(pIdx + 1, 0, pSecond);
-  if (c.kind === 'video') {
-    c.detachedAudio = true; c.linkedAudioId = pClip.id; pClip.linkedVideoId = c.id;
-    second.detachedAudio = true; second.linkedAudioId = pSecond.id; pSecond.linkedVideoId = second.id;
-  } else {
-    c.linkedVideoId = pClip.id; pClip.detachedAudio = true; pClip.linkedAudioId = c.id;
-    second.linkedVideoId = pSecond.id; pSecond.detachedAudio = true; pSecond.linkedAudioId = second.id;
-  }
-  track_sort(pTrack);
-}
-
 export function splitAtPlayhead() {
   const t = getPlayhead();
   const target = targetClipAtPlayhead();
@@ -123,7 +84,6 @@ export function splitAtPlayhead() {
     tr.clips.splice(idx + 1, 0, second);
     newId = second.id;
     track_sort(tr);
-    splitLinkedPartner(p, c, second, t); // リンク音声も同位置で分割し左右を対応づけ
   });
   if (newId) { const f = findClip(newId); if (f) setSelection({ trackId: f.track.id, clipId: newId }); }
   toast('クリップを分割しました');
@@ -137,11 +97,10 @@ export function cutBefore() {
   const { clip } = target;
   // 残るクリップ(t〜末尾)が MIN 未満にならないようにする
   if (t <= clip.start + MIN || t >= clipEnd(clip) - MIN) { toast('カットできる位置ではありません', 'err'); return; }
-  mutate((p) => {
+  mutate(() => {
     const c = findClip(clip.id).clip;
     if (c.kind === 'text') { c.start = t; }
     else { c.in = c.in + (t - c.start) * clipSpeed(c); c.start = t; }
-    mirrorLinkedGeometry(p, c); // リンク相手も同じ区間/位置へ
   });
   toast('再生位置より前をカットしました');
 }
@@ -154,11 +113,10 @@ export function cutAfter() {
   const { clip } = target;
   // 残るクリップ(先頭〜t)が MIN 未満にならないようにする
   if (t <= clip.start + MIN || t >= clipEnd(clip) - MIN) { toast('カットできる位置ではありません', 'err'); return; }
-  mutate((p) => {
+  mutate(() => {
     const c = findClip(clip.id).clip;
     if (c.kind === 'text') { c.end = t; }
     else { c.out = c.in + (t - c.start) * clipSpeed(c); }
-    mirrorLinkedGeometry(p, c); // リンク相手も同じ区間/位置へ
   });
   toast('再生位置より後ろをカットしました');
 }
@@ -167,21 +125,11 @@ export function cutAfter() {
 export function deleteSelection() {
   const ids = getSelectedIds();
   if (!ids.length) { toast('削除する対象を選択してください', 'err'); return; }
-  // リンクした映像/音声はセットで削除（detachedAudio の動画とその音声クリップ）
-  const all = new Set(ids);
-  for (const tr of getTracks()) {
-    for (const c of tr.clips) {
-      if (!all.has(c.id)) continue;
-      if (c.linkedAudioId) all.add(c.linkedAudioId);
-      if (c.linkedVideoId) all.add(c.linkedVideoId);
-    }
-  }
-  const del = [...all];
   mutate((p) => {
-    for (const tr of p.tracks) tr.clips = tr.clips.filter((c) => !del.includes(c.id));
+    for (const tr of p.tracks) tr.clips = tr.clips.filter((c) => !ids.includes(c.id));
   });
   setSelection(null);
-  toast(del.length > 1 ? `${del.length}件を削除しました` : '削除しました');
+  toast(ids.length > 1 ? `${ids.length}件を削除しました` : '削除しました');
 }
 
 // テロップ追加：再生位置に置く。上半分(visual)の空いているトラックを上から探し、

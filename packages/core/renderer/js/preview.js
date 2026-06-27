@@ -131,8 +131,8 @@ function syncBaseVideo(t, shouldPlay) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
     } else { pendingSeek = true; }
-    // ベース層がミュート、または音声を分離済み（リンク音声クリップが鳴らす）なら映像のみ。
-    const baseMuted = !!(base.track && base.track.muted) || !!base.clip.detachedAudio;
+    // ベース層がミュートなら映像のみ（音声を止める）。それ以外はフェードに追従。
+    const baseMuted = !!(base.track && base.track.muted);
     try { video.muted = baseMuted; video.volume = baseMuted ? 0 : clipFadeAlpha(base.clip, t); } catch (_) {}
     if (shouldPlay) { if (video.paused) safePlay(); } else if (!video.paused) video.pause();
   } else {
@@ -193,8 +193,8 @@ function syncVideoTracks(t, shouldPlay) {
       const m = mediaById(c.mediaId);
       const vsrc = m ? fileUrl(previewPath(m)) : '';
       if (m && el._srcUrl !== vsrc) { el._srcUrl = vsrc; el._mediaId = m.id; el._pending = true; el.src = vsrc; el.load(); }
-      // 音声を分離済み（リンク音声クリップが鳴らす）またはトラックミュートなら、動画側の音声は無音（二重再生防止）
-      const elMuted = !!track.muted || !!c.detachedAudio;
+      // トラックミュート時は動画側の音声も無音
+      const elMuted = !!track.muted;
       try { el.muted = elMuted; } catch (_) {}
       el.volume = elMuted ? 0 : clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
       const sp = clipSpeed(c); try { el.playbackRate = sp; } catch (_) {}

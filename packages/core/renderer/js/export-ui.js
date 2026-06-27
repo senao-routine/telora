@@ -65,7 +65,7 @@ export function expandClipForExport(clip, m, W, H, kind) {
       type: kind, path: m.path, in: inS, out: outS, start: startS, ...rect,
       opacity: rectTf.opacity != null ? rectTf.opacity : 1, rotation: rectTf.rotation || 0,
       crop: rectTf.crop || null, chroma: rectTf.chroma || null, speed: sp,
-      fadeIn: fIn || 0, fadeOut: fOut || 0, muteAudio: !!clip.detachedAudio,
+      fadeIn: fIn || 0, fadeOut: fOut || 0,
     };
   };
   if (!hasKeyframes(clip)) {
@@ -133,7 +133,7 @@ export async function buildExportPayload(opts = {}) {
         const m = mediaById(clip.mediaId);
         if (!m || clipDur(clip) <= 0.02) continue;
         for (const seg of expandClipForExport(clip, m, W, H, clip.kind)) videoClips.push(seg);
-        if (m.hasAudio !== false && !track.muted && !clip.detachedAudio) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
+        if (m.hasAudio !== false && !track.muted) audioClips.push({ path: m.path, in: clip.in, out: clip.out, start: clip.start, volume: clip.volume != null ? clip.volume : 1, speed: clip.speed || 1, fadeIn: clip.fadeIn || 0, fadeOut: clip.fadeOut || 0 });
       }
     }
     if (videoClips.length) layers.push({ kind: 'video', clips: videoClips });

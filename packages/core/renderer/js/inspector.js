@@ -4,7 +4,7 @@ import {
   getProject, on, emit, getSelection, mediaById, clipDur, clipEnd, findClip, clipSpeed,
   pushHistory, noteDirty, totalDuration, clipMaxOut, MIN_CLIP, getPlayhead,
   transformAt, hasKeyframes, setKeyframe, clearKeyframes,
-  TELOP_PRESETS, TELOP_ANIMS, applyTelopPreset, getTextClips, setSelection, unlinkLinkedClip,
+  TELOP_PRESETS, TELOP_ANIMS, applyTelopPreset, getTextClips, setSelection,
 } from './state.js';
 import { splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, duplicateSelection } from './edit.js';
 import { silenceCut, fillerCut } from './cut-tools.js';
@@ -157,13 +157,6 @@ function renderMediaInspector(clip, track) {
 
   // フェード（映像・音声共通）
   appendFadeFields(clip);
-
-  // 映像↔音声リンクの状態と解除（リンク中のクリップのみ）
-  if (clip.linkedAudioId || clip.linkedVideoId) {
-    body.appendChild(el('div', { class: 'inspector-section-title', text: '映像・音声リンク' }));
-    body.appendChild(el('div', { class: 'hint-text', text: '🔗 この映像と音声はリンクしています（移動・トリム・分割・削除が連動）。' }));
-    body.appendChild(el('button', { class: 'btn full-btn', onClick: () => { unlinkLinkedClip(clip.id); renderInspector(); emit('project'); } }, ['🔓 リンクを解除（個別に編集）']));
-  }
 
   // カット支援（動画/音声で音声を持つ素材のみ）：無音カット・フィラーカット
   if ((clip.kind === 'video' || clip.kind === 'audio') && m && m.hasAudio !== false) {
