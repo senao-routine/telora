@@ -7,7 +7,7 @@
 - **最終更新**: 2026-06-27
 - **現在のフェーズ**: フェーズ0〜3 完了 ✅ → **3モデル（①②③）＋合体版④すべて起動可能・主要編集機能も実装済み・Mac配布ビルド(dmg)生成確認済み・文字起こしは ffmpeg＋whisper.cpp(large-v3-turbo) を完全同梱（インストールのみで無料/オフライン/高精度）**
 - **直近の方針**: 動画は「映像＋音声を1本の帯（波形バンド付きクリップ）」で表示。音声の自動分離は撤回。音声単体素材は音声トラックへ。文字起こしは外部依存をやめ、ffmpeg・whisper.cpp・モデルをアプリに同梱（vendor/ → extraResources）して箱出しで動かす方針。
-- **残り**: (1) ③の実LLM＝コード経路はモックでE2E検証済み・⚙に接続テスト追加。あとはユーザーが実APIキーを⚙へ入力するだけ。(2) 任意の仕上げ＝②MCPの**実クライアント(Claude Code)接続の手元確認**（curlは検証済み）。配布ビルドはMac(arm64)を**ffmpeg＋whisper同梱**で生成・検証済み。**残課題: 第三者へネット配布するなら署名＋公証（未署名のままだとGatekeeperで弾かれる）／Windows(nsis)はWin環境で要ビルド＋win用vendor／Intel Mac対応はmac-x64 vendorが必要**。
+- **残り**: (1) ③の実LLM＝コード経路はモックでE2E検証済み・⚙に接続テスト追加。あとはユーザーが実APIキーを⚙へ入力するだけ。(2) ②MCPの**実クライアント(Claude Code)接続は手元検証済み（2026-06-27・`claude mcp`で✔Connected＋tools/call往復）**。配布ビルドはMac(arm64)を**ffmpeg＋whisper同梱**で生成・検証済み。**残課題: 第三者へネット配布するなら署名＋公証（未署名のままだとGatekeeperで弾かれる）／Windows(nsis)はWin環境で要ビルド＋win用vendor／Intel Mac対応はmac-x64 vendorが必要**。
 - **起動**: `npm run start:base`（①）／**`npm run start:ai`（合体版＝MCP＋アプリ内チャット, 推奨）**／`npm run start:mcp`（②単体）／`npm run start:chat`（③単体）
 - **設計書**: [00 全体/構成](./00-overview-and-structure.md) ・ [01 ベース](./01-base-editor.md) ・ [02 MCP](./02-local-mcp.md) ・ [03 AIチャット](./03-ai-chat.md)
 
@@ -74,7 +74,8 @@
 - [x] main `mcp-server.js`：HTTPサーバ（`127.0.0.1` 限定・ポート 19790）。※専用アプリ＝起動＝利用意思とみなし ON（一般アプリ向けの「既定OFFトグル」は将来）
 - [x] `tools/list` / `tools/call`（**全19ツール**: get_timeline/get_transcript/select_clip/split_clip/cut_before/cut_after/delete_clip/move_clip/add_telop/set_telop/cut_silence/cut_fillers/set_track_mute/add_crossfade/import_media/add_clip/export_video/undo/redo）
 - [x] id 相関の IPC 往復 + タイムアウト（通常30s／書き出し・文字起こし系は600s）
-- [x] **接続デモ**: curl で JSON-RPC 往復を実機検証（initialize→tools/list→add_telop→get_timeline反映→import_media→add_clip→cut_silence made=2）。※実 Claude Code クライアント接続は手元環境で要確認（SSE/セッション等のエッジケース）
+- [x] **接続デモ**: curl で JSON-RPC 往復を実機検証（initialize→tools/list→add_telop→get_timeline反映→import_media→add_clip→cut_silence made=2）。
+- [x] **実Claude Codeクライアント接続を手元検証済み（2026-06-27）**: `claude`(v2.1.195) で `mcp add --transport http` → `mcp list`＝`✔ Connected`（initialize＋tools/list の実ハンドシェイク成功・JSON応答/Mcp-Session-Id のエッジ問題なし）。さらに headless `claude -p`（隔離MCP設定）で実tools/call往復も確認：read=get_timeline（実タイムライン取得）／mutate=add_telop→get_transcript で字幕「接続テスト」反映。SSE/セッション懸念は解消。
 - [x] 残りツール（move_clip/cut_fillers/set_track_mute/add_crossfade/import/add_clip/export/undo/redo …）
 - [x] 接続情報メニュー（`AI接続 → MCP接続情報を表示…` で各クライアントの登録コマンドを案内）
 - [x] **最小デモ達成**: 「無音を消す」が MCP 経由で通る（cut_silence made=2・実FFmpeg）
@@ -118,6 +119,7 @@
 
 ## 進捗ログ（任意・追記式）
 
+- 2026-06-27: **②MCP 実Claude Codeクライアント接続を手元検証（タスク7）**。dev `npm run start:mcp` でサーバ起動(127.0.0.1:19790)→ `claude`(v2.1.195) を実MCPクライアントとして使用：`claude mcp add --transport http telora-test …` → `claude mcp list`＝`✔ Connected`（initialize＋tools/list の実ハンドシェイク成功。curl 検証では拾えない実クライアントの JSON応答/Mcp-Session-Id 周りも問題なし）。さらに headless `claude -p`（`--strict-mcp-config` で隔離）で実 tools/call 往復を確認：read=`get_timeline`（実タイムライン1280×720/4トラック取得）／mutate=`add_telop`(「接続テスト」)→`get_transcript` で cue 反映。検証後はテスト用MCP設定を削除・dev用アプリ終了。ROADMAP line77 の懸念を解消。
 - 2026-06-27: **配布ビルド＋「文字起こしを完全同梱」（Mac/arm64・無料・オフライン・高精度）**。外部依存(Homebrew ffmpeg / pip whisper)をやめ、アプリ単体で箱出し動作するようにした。(1) `vendor/mac-arm64/`(gitignore)に同梱物を集約：**ffmpeg 6.0**(43MB)・**ffprobe**(73MB)＝`ffmpeg-static`/`ffprobe-static`(devDep)から取得、**whisper-cli**(3.1MB)＝whisper.cpp を静的＋Metalビルド（`otool`依存はシステムframeworkのみ＝自己完結）、**ggml-large-v3-turbo.bin**(1.5GB)＝HuggingFaceから取得。(2) コード：`export.js` に `vendorDir()` を新設し `resolveBin` を「同梱優先（env > vendor > Homebrew/PATH）」に変更・export公開。`transcribe.js` に `bundledWhisper()`(large-v3-turbo)を追加し `detectEngine` で最優先・`findWhisperModel` に vendor/models を追加。(3) ビルド：`package.json` の `build.mac.extraResources` で `vendor/mac-arm64` を `Contents/Resources/vendor/mac-arm64` へ同梱。`CSC_IDENTITY_AUTO_DISCOVERY=false` で `dist/Telora-1.0.0-arm64.dmg`(**1.5GB**)生成・`.app`(1.9GB)。**検証**: 開発経路（FFMPEG/FFPROBE=同梱・detectEngine=`bundled:true`）＋ 実E2E（macOS `say`→同梱ffmpeg→同梱whisper-cli＋turbo）で日本語をほぼ完璧に文字起こし(11秒/Metal)。**.app内の同梱バイナリでも**同一結果を確認。**残注意点**: (a) アイコンは Electron 既定。(b) 未署名(adhoc)＝自分のMacのローカル配布は動くが、**ネット配布時はGatekeeper対策に署名＋公証が必要**（nested binaryも要署名）。(c) Windows版は Win 環境で `npm run dist:win` ＋ `vendor/win-x64`(ffmpeg.exe/whisper-cli.exe/モデル) と `win.extraResources` 追加が必要。(d) Intel Mac は `vendor/mac-x64` を用意して universal 化が必要。
 - 2026-06-21: 設計書 00〜03 作成、本ロードマップ作成。実装は未着手。
 - 2026-06-23: **フェーズ0完了**。`src/` を `packages/core/` へ git mv、`apps/base` launcher 追加、ルート package.json に workspaces/scripts/builder files 設定。モデル①の無回帰を eval ハーネスで確認。次はフェーズ1（EditCommands）。
