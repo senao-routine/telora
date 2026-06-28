@@ -54,7 +54,11 @@
       ]
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "extraResources": [
+        { "from": "vendor/win-${arch}", "to": "vendor/win-${arch}" }
+      ]
     }
   }
 }
