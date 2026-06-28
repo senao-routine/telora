@@ -1,8 +1,8 @@
 {
-  "name": "telora",
-  "productName": "Telora",
+  "name": "clipai",
+  "productName": "ClipAI",
   "version": "1.0.0",
-  "description": "Telora — テロップ＆カットに特化した無料の動画エディタ（Mac / Windows）",
+  "description": "ClipAI — テロップ＆カット＋AIに特化した無料の動画エディタ（Mac / Windows）",
   "main": "apps/base/main.js",
   "workspaces": [
     "packages/*",
@@ -35,8 +35,8 @@
     "ffprobe-static": "^3.1.0"
   },
   "build": {
-    "appId": "com.routinelabo.telora",
-    "productName": "Telora",
+    "appId": "com.routinelabo.clipai",
+    "productName": "ClipAI",
     "files": [
       "packages/core/**/*",
       "apps/**/*",
@@ -45,6 +45,7 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.video",
+      "icon": "build/icon.icns",
       "extraResources": [
         { "from": "vendor/mac-arm64", "to": "vendor/mac-arm64" }
       ]

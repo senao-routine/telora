@@ -47,7 +47,7 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   // モデル種別（base / mcp / chat）。main から additionalArguments で渡される。
-  model: (() => { const a = (process.argv || []).find((x) => x.startsWith('--telora-model=')); return a ? a.split('=')[1] : 'base'; })(),
+  model: (() => { const a = (process.argv || []).find((x) => x.startsWith('--clipai-model=')); return a ? a.split('=')[1] : 'base'; })(),
 
   // MCP ブリッジ（モデル②）：main の MCPサーバ ↔ renderer の EditCommands を往復させる。
   onMcpInvoke: (cb) => { const h = (_e, msg) => cb(msg); ipcRenderer.on('mcp-invoke', h); return () => ipcRenderer.removeListener('mcp-invoke', h); },

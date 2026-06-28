@@ -1,6 +1,6 @@
 {
-  "name": "telora-mcp",
-  "productName": "Telora (MCP)",
+  "name": "clipai-mcp",
+  "productName": "ClipAI (MCP)",
   "version": "1.0.0",
   "private": true,
   "description": "モデル②: ローカルMCP版（外部AIエージェントがタイムラインを操作）",

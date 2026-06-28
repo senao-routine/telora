@@ -1,6 +1,6 @@
 {
-  "name": "telora-chat",
-  "productName": "Telora (AIチャット)",
+  "name": "clipai-chat",
+  "productName": "ClipAI (AIチャット)",
   "version": "1.0.0",
   "private": true,
   "description": "モデル③: アプリ内AIチャット版（自然言語で編集を指示）",

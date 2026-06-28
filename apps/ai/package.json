@@ -1,6 +1,6 @@
 {
-  "name": "telora-ai",
-  "productName": "Telora AI",
+  "name": "clipai-ai",
+  "productName": "ClipAI AI",
   "version": "1.0.0",
   "private": true,
   "description": "AI版: ローカルMCP接続とアプリ内AIチャットを両方備えた動画編集ソフト",

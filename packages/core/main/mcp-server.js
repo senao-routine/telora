@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { ipcMain } = require('electron');
 
 const HOST = '127.0.0.1';
-const PORT = Number(process.env.TELORA_MCP_PORT) || 19790;
+const PORT = Number(process.env.CLIPAI_MCP_PORT) || 19790;
 
 // MCPツール定義: name（MCP公開名）→ cmd（EditCommands コマンド名）+ JSON Schema。
 const TOOLS = [
@@ -67,7 +67,7 @@ function onResult(_e, msg) {
 async function dispatch(method, params) {
   if (method === 'initialize') {
     const pv = (params && params.protocolVersion) || '2024-11-05';
-    return { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'telora', version: '1.0.0' } };
+    return { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'clipai', version: '1.0.0' } };
   }
   if (method === 'ping') return {};
   if (method === 'tools/list') {
@@ -138,15 +138,15 @@ function start(windowGetter) {
     // ループバック以外は拒否（DNSリバインド/外部アクセス対策）
     const ra = req.socket.remoteAddress || '';
     if (!(ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1')) { res.writeHead(403); res.end('forbidden'); return; }
-    // 任意トークン認証：TELORA_MCP_TOKEN 設定時のみ Authorization: Bearer を要求
-    const token = process.env.TELORA_MCP_TOKEN || '';
+    // 任意トークン認証：CLIPAI_MCP_TOKEN 設定時のみ Authorization: Bearer を要求
+    const token = process.env.CLIPAI_MCP_TOKEN || '';
     if (token && (req.headers.authorization || '') !== 'Bearer ' + token) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'unauthorized' } }));
       return;
     }
     // GET: サーバ起点の SSE ストリームは提供しないため 405（MCP Streamable HTTP 仕様準拠）
-    if (req.method === 'GET') { res.writeHead(405, { Allow: 'POST, DELETE', 'Content-Type': 'text/plain' }); res.end('Telora MCP: POST JSON-RPC 2.0 to /mcp'); return; }
+    if (req.method === 'GET') { res.writeHead(405, { Allow: 'POST, DELETE', 'Content-Type': 'text/plain' }); res.end('ClipAI MCP: POST JSON-RPC 2.0 to /mcp'); return; }
     // DELETE: セッション終了
     if (req.method === 'DELETE') { const sid = req.headers['mcp-session-id']; if (sid) sessions.delete(sid); res.writeHead(204); res.end(); return; }
     if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST, DELETE' }); res.end('method not allowed'); return; }

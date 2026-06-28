@@ -121,5 +121,5 @@ export function updateTitle() {
   const ui = getUI(); const project = getProject();
   const nameEl = document.getElementById('projName');
   if (nameEl) nameEl.textContent = project.name + (ui.dirty ? ' ●' : '');
-  document.title = `${project.name}${ui.dirty ? ' *' : ''} — Telora`;
+  document.title = `${project.name}${ui.dirty ? ' *' : ''} — ClipAI`;
 }
