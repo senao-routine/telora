@@ -16,6 +16,8 @@
     "start:chat": "electron apps/chat",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
+    "dist:mac:arm64": "electron-builder --mac --arm64",
+    "dist:mac:x64": "electron-builder --mac --x64",
     "dist:win": "electron-builder --win --x64"
   },
   "keywords": [
@@ -37,6 +39,7 @@
   "build": {
     "appId": "com.routinelabo.clipai",
     "productName": "ClipAI",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "files": [
       "packages/core/**/*",
       "apps/**/*",
@@ -47,7 +50,7 @@
       "category": "public.app-category.video",
       "icon": "build/icon.icns",
       "extraResources": [
-        { "from": "vendor/mac-arm64", "to": "vendor/mac-arm64" }
+        { "from": "vendor/mac-${arch}", "to": "vendor/mac-${arch}" }
       ]
     },
     "win": {
