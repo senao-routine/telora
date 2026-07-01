@@ -9,6 +9,11 @@
     "apps/*"
   ],
   "scripts": {
+    "lint": "node scripts/lint.js",
+    "test:smoke": "node tests/run-smoke.js",
+    "test:commands": "node tests/run-commands.js",
+    "test:fast": "node scripts/lint.js && node tests/run-smoke.js --base-only && node tests/run-commands.js --fast",
+    "test": "node scripts/lint.js && node tests/run-smoke.js && node tests/run-commands.js",
     "start": "electron .",
     "start:base": "electron apps/base",
     "start:ai": "electron apps/ai",

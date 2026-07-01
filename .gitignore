@@ -3,3 +3,5 @@ dist/
 vendor/
 *.log
 .DS_Store
+tests/.out/
+tests/fixtures/*.mp4
