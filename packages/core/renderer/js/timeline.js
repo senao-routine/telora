@@ -16,7 +16,7 @@ import { seek } from './preview.js';
 
 const MIN_TEXT = 0.2;
 const DRAG_THRESHOLD = 4;
-const SNAP_PX = 8;
+const SNAP_PX = 10; // マグネット吸着の範囲（px）
 const TRACK_H = { visual: 64, audio: 54 };
 // トラックは種別に縛られないので、ヘッダのアイコンは中身から推定して表示する
 function trackIcon(track) {
@@ -29,7 +29,7 @@ function trackIcon(track) {
 }
 const RULER_H = 26;
 
-let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl, rangeBandEl, marqueeEl;
+let content, scrollEl, tracksEl, headersEl, ruler, playheadEl, playheadTimeEl, rangeBandEl, marqueeEl, snapGuideEl;
 let drag = null;
 
 export function initTimeline() {
@@ -42,6 +42,12 @@ export function initTimeline() {
   playheadTimeEl = document.getElementById('playheadTime');
   rangeBandEl = document.getElementById('rangeBand');
   marqueeEl = document.getElementById('marquee');
+  // マグネット吸着ガイド：ドラッグ中に「くっつく位置」を示す縦線（再生ヘッドと同じ座標系）
+  snapGuideEl = document.createElement('div');
+  snapGuideEl.className = 'snap-guide';
+  snapGuideEl.hidden = true;
+  snapGuideEl.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:#4fd1ff;box-shadow:0 0 6px #4fd1ff,0 0 2px #4fd1ff;pointer-events:none;z-index:6;';
+  if (playheadEl && playheadEl.parentNode) playheadEl.parentNode.appendChild(snapGuideEl);
 
   on('project', render);
   on('selection', renderSelectionOnly);
@@ -288,6 +294,36 @@ function snapTime(t, ignoreId) {
   return best;
 }
 
+// 移動時のマグネット：クリップの「前端」と「後端」の両方を候補（0/再生位置/他クリップ端）に
+// 吸着させ、より近い方のズレを採用する。→ カットしたクリップを隣にピタッとくっつけられる。
+let snapGuideTime = null;
+function snapMoveStart(newStart, duration, ignoreId) {
+  const P = px();
+  const cands = [0, getPlayhead()];
+  for (const track of getTracks()) {
+    for (const c of track.clips) {
+      if (c.id === ignoreId) continue;
+      cands.push(c.start, clipEnd(c));
+    }
+  }
+  let bestDelta = 0, bestPx = SNAP_PX;
+  snapGuideTime = null;
+  for (const cand of cands) {
+    const dS = Math.abs((cand - newStart) * P);            // 前端を cand に合わせる
+    if (dS < bestPx) { bestPx = dS; bestDelta = cand - newStart; snapGuideTime = cand; }
+    const dE = Math.abs((cand - (newStart + duration)) * P); // 後端を cand に合わせる
+    if (dE < bestPx) { bestPx = dE; bestDelta = cand - (newStart + duration); snapGuideTime = cand; }
+  }
+  return newStart + bestDelta;
+}
+// 吸着位置のガイド線を表示/非表示
+function updateSnapGuide() {
+  if (!snapGuideEl) return;
+  if (snapGuideTime == null) { snapGuideEl.hidden = true; return; }
+  snapGuideEl.hidden = false;
+  snapGuideEl.style.left = (snapGuideTime * px()) + 'px';
+}
+
 // ---- スクラブ / 範囲ドラッグ ----
 function startScrub(e, fromKnob = false) {
   e.preventDefault();
@@ -395,7 +431,8 @@ function onMove(e) {
 
   // 複数選択のグループ移動（横方向のみ。primary をスナップした delta を全選択へ適用）
   if (drag.group) {
-    let ns = Math.max(0, snapTime(Math.max(0, drag.origStart + dt), drag.clipId));
+    const dur = drag.origEnd - drag.origStart;
+    let ns = Math.max(0, snapMoveStart(Math.max(0, drag.origStart + dt), dur, drag.clipId));
     let appliedDt = ns - drag.origStart;
     for (const id of drag.group) { const o = drag.groupOrig[id]; if (o) appliedDt = Math.max(appliedDt, -o.start); }
     for (const id of drag.group) {
@@ -403,6 +440,7 @@ function onMove(e) {
       if (f.clip.kind === 'text') { const d = o.end - o.start; f.clip.start = o.start + appliedDt; f.clip.end = f.clip.start + d; }
       else f.clip.start = o.start + appliedDt;
     }
+    updateSnapGuide();
     noteDirty(); emit('project');
     return;
   }
@@ -429,10 +467,11 @@ function onMove(e) {
 
   if (drag.kind === 'move') {
     moveClipVertically(e, found, clip); // 縦方向＝トラック間移動（最上段より上なら新規トラック生成）
-    let ns = snapTime(Math.max(0, drag.origStart + dt), clip.id);
-    ns = Math.max(0, ns);
-    if (clip.kind === 'text') { const d = drag.origEnd - drag.origStart; clip.start = ns; clip.end = ns + d; }
+    const dur = drag.origEnd - drag.origStart;
+    let ns = Math.max(0, snapMoveStart(Math.max(0, drag.origStart + dt), dur, clip.id)); // 前後端どちらでも吸着
+    if (clip.kind === 'text') { clip.start = ns; clip.end = ns + dur; }
     else clip.start = ns;
+    updateSnapGuide();
   } else if (drag.kind === 'trim') {
     if (clip.kind === 'text') {
       if (drag.side === 'left') clip.start = clamp(snapTime(drag.origStart + dt, clip.id), 0, drag.origEnd - MIN_TEXT);
@@ -462,6 +501,7 @@ function onMove(e) {
 
 function onUp() {
   if (!drag) return;
+  snapGuideTime = null; updateSnapGuide(); // ドラッグ終了でマグネットのガイド線を消す
   if (drag.kind === 'marquee') {
     if (drag.moved) selectClipsInBox(drag.startX, drag.startY, drag.curX, drag.curY); // 矩形に触れたクリップを選択
     else { setSelection(null); seek(timeAtClientX(drag.startX)); }                    // クリック=シーク＋選択解除
