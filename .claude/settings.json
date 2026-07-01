@@ -1,0 +1,59 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run test:*)",
+      "Bash(node scripts/lint.js:*)",
+      "Bash(node tests/run-smoke.js:*)",
+      "Bash(node tests/run-commands.js:*)",
+      "Bash(node tests/fixtures/make-fixture.js:*)",
+      "Bash(node --check:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git stash list:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(curl http://127.0.0.1:*)",
+      "WebSearch"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(npm run start:*)",
+      "Bash(npm run dist:*)",
+      "Bash(npm install:*)",
+      "Bash(npm i:*)",
+      "Bash(npm uninstall:*)"
+    ],
+    "deny": [
+      "Read(vendor/**)",
+      "Edit(vendor/**)",
+      "Edit(dist/**)",
+      "Edit(node_modules/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hooks/check-syntax.js\""
+          }
+        ]
+      }
+    ]
+  }
+}
