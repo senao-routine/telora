@@ -8,6 +8,17 @@ main プロセス = CommonJS、renderer = ES modules。preload API は **FROZEN�
 `packages/core/renderer/js/commands/edit-commands.js`（EditCommands・19コマンド）が ②MCP・③AIチャット共有の心臓部。
 MCP サーバは ai/mcp 起動時に `127.0.0.1:19790`（JSON-RPC、curl で検証可。ポートは `CLIPAI_MCP_PORT` で変更可）。
 
+## 現在地（2026-07-03 更新・引き継ぎメモ）
+
+3モデル実装（フェーズ0〜3）は完了。**現在はリリース準備フェーズで、`docs/TODO.md` が唯一の作業キュー**。
+
+- 進め方: ユーザーが `/daily` と打つ → TODO.md の P0→P1→P2 の先頭未着手 `- [ ]` を1つだけ消化（規約は TODO.md 冒頭のフォーマット契約と `.claude/skills/daily/SKILL.md`）
+- 優先度の根拠: `docs/エンジニア分析-20260702.md`（6観点57件・実コード検証済み）／
+  `docs/marketing/STRATEGY.md`（リリースゲート G1〜G3・KPI・回収ライン。外部レビュー反映済み）
+- 人間待ち（⛔・スキップ対象）: T004 Apple Developer 登録・T027 種火ユーザー確保・T050 Windows 実機検証。
+  T004 が済むと T005（署名・公証設定）が解禁される
+- 新しいセッション/アカウントで続きをやる場合も、このファイルと TODO.md を読めば追加の文脈は不要
+
 ## 検証コマンド
 
 | コマンド | 内容 | 所要 |
