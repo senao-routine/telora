@@ -14,7 +14,7 @@
 
 ## P0 — リリースブロッカー（戦略ゲート G1 の前提）
 
-- [ ] T001 [code] 配布ビルドを AI 版に切替え、AI 機能は既定 OFF にする [分析 DIST-1][戦略 §5]
+- [x] T001 [code] 配布ビルドを AI 版に切替え、AI 機能は既定 OFF にする [分析 DIST-1][戦略 §5]
   - 完了条件: package.json の main が apps/ai を指し（①〜④の分売はしない）、model=ai でも MCP サーバは自動起動せず「AI接続」メニューから ON にする（初回起動で API キー・ポート待受に遭遇しない）。
   - 検証: `npm test`（smoke base/ai）green ／ `node -e` で main が apps/ai/main.js であることと、ai 起動直後に 127.0.0.1:19790 が閉じていることを確認（tests/lib/launch.js + curl）。
 
@@ -288,3 +288,4 @@
 ## 進捗ログ（追記式）
 
 - 2026-07-02: 初版作成。エンジニア分析57件（docs/エンジニア分析-20260702.md）とマーケ戦略（docs/marketing/STRATEGY.md・外部レビュー反映済み）を統合し、P0:8／P1:41／P2:18 タスクに分解。
+- 2026-07-08: T001 完了。配布ビルドの main を apps/ai に切替え、model=ai では MCP サーバを自動起動しない（既定OFF・「AI接続」メニューから開始）よう変更。smoke に「ai 起動で [mcp] マーカーが出ない」恒久チェックを追加（npm test: smoke base/ai OK・commands 33 asserts green／ai 起動中 19790 は ECONNREFUSED を確認）。次: T002。

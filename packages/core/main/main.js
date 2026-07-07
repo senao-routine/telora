@@ -402,8 +402,10 @@ ipcMain.handle('open-external', async (_e, url) => {
 
 app.whenReady().then(() => {
   createWindow();
-  // ②MCP / AI版: ローカル MCP サーバを起動（外部AIエージェントがタイムラインを操作）。
-  if (MODEL === 'mcp' || MODEL === 'ai') {
+  // MCP サーバの自動起動は専用アプリ（apps/mcp）のみ。
+  // 配布形態の AI版（model=ai）は既定 OFF — 一般ユーザーが意図せずローカルポートを
+  // 開かないようにし、「AI接続」メニューから明示的に開始する（戦略 §5 初回起動体験）。
+  if (MODEL === 'mcp') {
     try {
       const mcp = require('./mcp-server');
       const info = mcp.start(() => mainWindow);
