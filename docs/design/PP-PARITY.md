@@ -98,25 +98,25 @@
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/edit.js, packages/core/renderer/js/context-menu.js
   - 検証: 手動: 2クリップ間の空白を右クリック→詰める→後続が前詰め・Cmd+Z で復元。npm run test:fast。
   - 競合: なし。マーキー選択（startBodyDrag timeline.js:345）とはボタン種別（右クリック）で分離。
-- [ ] PP014 [S] マーカーをスナップ候補に追加＋リップル時のマーカー追従
+- [x] PP014 [S] マーカーをスナップ候補に追加＋リップル時のマーカー追従
   - PP挙動: PP はマーカーにもクリップが吸着し、リップル編集でマーカー位置も追従する。
   - 方針: snapTime（timeline.js:282）と snapMoveStart（timeline.js:302）の候補配列に getProject().markers の各 t を追加（2行×2箇所）。あわせて PP009 の deleteRange(a,b) 内で markers を処理: t>=b は len 分左シフト、a<=t<b は削除（現状 deleteSelectedRange は p.tracks しか触らずマーカーがズレたまま残る既知バグの修正を兼ねる）。
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/edit.js
   - 検証: 手動: マーカー近傍へドラッグで吸着ガイドが出る。TCE_EVAL: マーカーより前を範囲リップル削除→マーカー t が len 分減る。npm run test:fast。
   - 競合: なし。
-- [ ] PP015 [S] Shift+マーキーで追加選択＋Cmd+A 全選択
+- [x] PP015 [S] Shift+マーキーで追加選択＋Cmd+A 全選択
   - PP挙動: PP は Shift+ドラッグで既存選択に追加、Cmd+A でシーケンス内全クリップ選択。
   - 方針: startBodyDrag（timeline.js:345-349）で e.shiftKey を drag.additive に保持し、selectClipsInBox（timeline.js:362-370）で置換でなく getSelectedIds() と統合して setMultiSelection。Cmd+A は wireKeyboard の mod 領域に追加し、typing 中は OS の全選択に委譲（app.js:294 の除外リストに 'a' を追加）。全トラックの全クリップ id を setMultiSelection（state.js:140-145）へ。
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/app.js
   - 検証: 手動: マーキー→Shift+マーキーで選択が増える・Cmd+A で全選択・テキスト欄内 Cmd+A は文字全選択のまま。npm run test:fast。
   - 競合: Cmd+A は未割当。typing 除外リスト（app.js:294）への追加を忘れるとテキスト全選択を奪うため必須。
-- [ ] PP016 [M] トラックロック（🔒トグル・編集操作からの保護）
+- [x] PP016 [M] トラックロック（🔒トグル・編集操作からの保護）
   - PP挙動: PP はトラックヘッダの鍵アイコンでロックし、ロック中のトラックはドラッグ・トリム・削除・上書きの対象外（斜線表示）。
   - 方針: track.locked を追加（undefined=false なので既存プロジェクト JSON と互換・undo スナップショットもそのまま通る）。トラックヘッダのミュートボタン並び（timeline.js:132-137）に 🔒 トグルを追加し、ロック行は CSS 斜線背景。ガード挿入点: startClipDrag（timeline.js:385・選択のみ許可）、HTML5 ドロップ（timeline.js:154-163）、moveClipVertically の行判定（trackRowAtY 先で locked 行スキップ）、deleteSelection/deleteRange/resolveOverwrite（edit.js・ロック行は変更対象から除外→リップル時は詰めずに据え置き）、findFreeSlot（media.js:242）と placeBumped（edit.js:213）の探索からロック行を除外。edit.js 共有関数で守るため MCP/AI 経路にも同時に効く。
   - 対象: packages/core/renderer/js/state.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/edit.js, packages/core/renderer/js/media.js
   - 検証: tests/run-commands.js にロック行への deleteClip/moveClip が拒否されるケースを追加。手動でドラッグ・トリム・ドロップ不可を確認。npm run test:fast。
   - 競合: リップル削除（PP009/PP011）との整合が論点: ロック行は詰めない仕様（PPのシンクロックOFF相当）とし、toast で「ロック中のトラックは詰めません」と明示。
-- [ ] PP017 [M] 映像トラックの表示ON/OFF（目アイコン）
+- [x] PP017 [M] 映像トラックの表示ON/OFF（目アイコン）
   - PP挙動: PP はトラックの目アイコンで映像出力をトグルし、下のレイヤーだけを確認しながら編集できる。
   - 方針: track.hidden を追加し、トラックヘッダ（timeline.js:132-137 のボタン並び）に 👁 トグル（visual トラックのみ表示）。preview.js render()（監査 L384-450）の下→上トラック合成ループで hidden をスキップ（hitBoxes にも積まないので誤クリックも防げる）。書き出し反映は export のフィルタ構築に1箇所スキップを足すが、2時間を超える場合はプレビューのみ先行しツールチップに「プレビューのみ」と明示して分割。
   - 対象: packages/core/renderer/js/state.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/preview.js
@@ -206,3 +206,4 @@
 - 2026-07-16 / PP004+PP005+PP006+PP007 / スナップトグルN（磁石ボタン・localStorage永続化・OFF時はガイド線も抑制）／ズームキー =/-/\（\=全体フィット・ズーム後は再生ヘッド追従）／Cmd+K分割追加（Cmd+B・S維持、メニューに併記）／矢印粒度をPP標準化（Shift+←→=5コマ、旧1秒はCmd+←→へ移設） / TCE_EVAL実測: 1コマ0.03s・5コマ0.20s・Cmd1.00s・分割1→2・スナップON/OFF/永続化・ズーム80→64→80px+フィット、npm testフル全緑（同一ファイル交差のため4件を1コミットに統合）
 - 2026-07-16 / PP008+PP009+PP010 / Alt+←→ナッジ（1コマ・Shiftで5コマ・mutate1回=undo1段・ドラッグと同じ上書き解決）／Shift+Deleteリップル削除（選択クリップ区間を統合し全トラック左詰め・右クリックメニューにも追加・共通コアextractRangeInPlaceを抽出）／メニューのSpace/Deleteアクセラレータ撤去（テキスト入力からのキー奪取を解消・ラベルにキー表記残し）。既存バグ修正: 範囲リップル削除でテキストクリップのendが未シフトで尺が伸びる問題 / TCE_EVAL実測: リップル後240px→0・ナッジ2.67px/16px・undo2段復帰・エラー0、npm testフル全緑
 - 2026-07-16 / PP011+PP012+PP013 / Q/Wリップルトリム（クリップ先頭〜ヘッド／ヘッド〜末尾を詰めてカット・Q後はヘッドを編集点へ）／I-O補助（Shift+I/O=イン/アウトへジャンプ・X=ヘッド下クリップをマーク・Shift+Space=イン-アウト間再生で自動停止 playStopAt）／ギャップ右クリック「詰める」（他トラック食い込みは安全側クランプ・内容削除ゼロの純粋左詰めのみ許可・コンテキストメニューにdisabled対応追加）。改善: targetClipAtPlayhead が選択なし時に上位トラックへフォールバック（テロップのみのプロジェクトでQ/W/X/分割が効くように） / TCE_EVAL実測: X=[0,240]マーク・Q後[0,160][160,240]+ヘッド0・W後[0,80]・範囲再生1.5→2.00自動停止・ギャップ1.0秒詰め、test:fast全緑
+- 2026-07-16 / PP014+PP015+PP016+PP017 / マーカーをスナップ候補に追加＋リップル時に追従（範囲内は削除・後方はシフト）／Shift+マーキー追加選択＋Cmd+A全クリップ選択（テキスト編集中はOSに委譲）／トラックロック🔒（ドラッグ・トリム・選択・マーキー・Cmd+A・配置・リップル・ドロップの対象外／PPと同じくロック層はリップルで動かない）／映像トラック表示OFF👁（プレビュー合成と書き出しの両方から除外・ベースは不可） / TCE_EVAL実測: マーカー320→80px追従・Cmd+A=2・ロック中選択0＋Q無効・👁クラストグル、test:fast全緑

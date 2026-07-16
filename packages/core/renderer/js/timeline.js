@@ -4,7 +4,7 @@ import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
   getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, setMultiSelection, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack, toggleTrackMute,
-  getTool, getRange, setRange, getMarkers, getSnap,
+  getTool, getRange, setRange, getMarkers, getSnap, toggleTrackLock, toggleTrackHidden,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
@@ -149,10 +149,24 @@ function renderHeaders() {
       onClick: (e) => { e.stopPropagation(); const on = toggleTrackMute(track.id); muteBtn.classList.toggle('muted', on); muteBtn.textContent = on ? '🔇' : '🔊'; },
     }, [track.muted ? '🔇' : '🔊']);
     children.push(muteBtn);
+    // 表示ON/OFF（映像トラックのみ・ベースは常時表示）。プレビューと書き出し両方に効く
+    if (track.kind === 'visual' && !track.base) {
+      children.push(el('button', {
+        class: 'th-eye' + (track.hidden ? ' off' : ''),
+        title: track.hidden ? '非表示（クリックで表示）' : 'このトラックを非表示（プレビュー・書き出しから除外）',
+        onClick: (e) => { e.stopPropagation(); toggleTrackHidden(track.id); },
+      }, [track.hidden ? '🚫' : '👁']));
+    }
+    // ロック（全トラック）。編集操作からの保護
+    children.push(el('button', {
+      class: 'th-lock' + (track.locked ? ' locked' : ''),
+      title: track.locked ? 'ロック中（クリックで解除）' : 'このトラックをロック（誤操作防止）',
+      onClick: (e) => { e.stopPropagation(); toggleTrackLock(track.id); },
+    }, [track.locked ? '🔒' : '🔓']));
     if (!track.base) {
       children.push(el('button', { class: 'th-del', title: 'この層を削除', onClick: (e) => { e.stopPropagation(); if (track.clips.length === 0 || confirm(`「${track.name}」を削除しますか？`)) removeTrack(track.id); } }, ['✕']));
     }
-    headersEl.appendChild(el('div', { class: `th-row th-${track.kind}${track.muted ? ' is-muted' : ''}`, style: `height:${TRACK_H[track.kind]}px` }, children));
+    headersEl.appendChild(el('div', { class: `th-row th-${track.kind}${track.muted ? ' is-muted' : ''}${track.locked ? ' is-locked' : ''}${track.hidden ? ' is-hidden' : ''}`, style: `height:${TRACK_H[track.kind]}px` }, children));
   }
 }
 
@@ -160,7 +174,7 @@ function renderTracks(P) {
   const sel = getSelection();
   tracksEl.innerHTML = '';
   for (const track of getTracks()) {
-    const row = el('div', { class: `track track-${track.kind}`, style: `height:${TRACK_H[track.kind]}px`, 'data-track': track.id });
+    const row = el('div', { class: `track track-${track.kind}${track.locked ? ' locked' : ''}${track.hidden ? ' hidden-track' : ''}`, style: `height:${TRACK_H[track.kind]}px`, 'data-track': track.id });
     for (const clip of track.clips) {
       row.appendChild(renderClip(track, clip, P, sel));
     }
@@ -169,6 +183,7 @@ function renderTracks(P) {
     row.addEventListener('dragleave', () => row.classList.remove('drop-hover'));
     row.addEventListener('drop', (e) => {
       e.preventDefault(); row.classList.remove('drop-hover');
+      if (track.locked) return; // ロック中のトラックへは配置しない
       const id = e.dataTransfer.getData('text/media-id');
       if (id) {
         const start = Math.max(0, (e.clientX - content.getBoundingClientRect().left) / P);
@@ -296,6 +311,7 @@ function snapTime(t, ignoreId) {
   if (!getSnap()) return t; // スナップOFF（N）なら素通し
   const P = px();
   const cands = [0, getPlayhead()];
+  for (const m of getMarkers()) cands.push(m.t); // マーカーにも吸着
   for (const track of getTracks()) {
     for (const c of track.clips) {
       if (c.id === ignoreId) continue;
@@ -318,6 +334,7 @@ function snapMoveStart(newStart, duration, ignoreId) {
   if (!getSnap()) return newStart; // スナップOFF（N）なら素通し・ガイドも出さない
   const P = px();
   const cands = [0, getPlayhead()];
+  for (const m of getMarkers()) cands.push(m.t); // マーカーにも吸着
   for (const track of getTracks()) {
     for (const c of track.clips) {
       if (c.id === ignoreId) continue;
@@ -363,7 +380,7 @@ function startRangeDrag(e) {
 function startBodyDrag(e) {
   e.preventDefault();
   if (getTool() === 'range') { startRangeDrag(e); return; }
-  drag = { kind: 'marquee', startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY, moved: false };
+  drag = { kind: 'marquee', startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY, moved: false, additive: e.shiftKey };
 }
 function updateMarquee(x0, y0, x1, y1) {
   if (!marqueeEl || !content) return;
@@ -377,14 +394,16 @@ function updateMarquee(x0, y0, x1, y1) {
 }
 function hideMarquee() { if (marqueeEl) marqueeEl.hidden = true; }
 // 矩形（クライアント座標）に触れたクリップを選択
-function selectClipsInBox(x0, y0, x1, y1) {
+function selectClipsInBox(x0, y0, x1, y1, additive) {
   const bx0 = Math.min(x0, x1), bx1 = Math.max(x0, x1), by0 = Math.min(y0, y1), by1 = Math.max(y0, y1);
   const ids = [];
   tracksEl.querySelectorAll('.clip').forEach((n) => {
+    if (n.closest('.track.locked')) return; // ロック中のトラックは選択対象外
     const r = n.getBoundingClientRect();
     if (r.right >= bx0 && r.left <= bx1 && r.bottom >= by0 && r.top <= by1) ids.push(n.dataset.id);
   });
-  setMultiSelection(ids);
+  // Shift+マーキーは既存選択への追加（置換しない）
+  setMultiSelection(additive ? Array.from(new Set([...getSelectedIds(), ...ids])) : ids);
 }
 
 function updateRangeBand() {
@@ -522,7 +541,7 @@ function onUp() {
   if (!drag) return;
   snapGuideTime = null; updateSnapGuide(); // ドラッグ終了でマグネットのガイド線を消す
   if (drag.kind === 'marquee') {
-    if (drag.moved) selectClipsInBox(drag.startX, drag.startY, drag.curX, drag.curY); // 矩形に触れたクリップを選択
+    if (drag.moved) selectClipsInBox(drag.startX, drag.startY, drag.curX, drag.curY, drag.additive); // 矩形に触れたクリップを選択
     else { setSelection(null); seek(timeAtClientX(drag.startX)); }                    // クリック=シーク＋選択解除
     hideMarquee(); drag = null; return;
   }
@@ -580,6 +599,7 @@ function trackRowAtY(clientY) {
 
 // クリップとトラックの種別が両立するか（音声は audio トラック、映像系は visual トラック）
 function trackCompatible(clip, track) {
+  if (track.locked) return false; // ロック中のトラックへは移動不可
   return track.kind === 'audio' ? clip.kind === 'audio' : clip.kind !== 'audio';
 }
 

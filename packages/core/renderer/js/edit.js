@@ -56,9 +56,10 @@ function targetClipAtPlayhead() {
     if (f && t > f.clip.start + 1e-6 && t < clipEnd(f.clip) - 1e-6) return f;
   }
   const base = baseClipAtTime(t);
-  if (base) return findClip(base.clip.id);
-  // ベーストラックに無ければ上のトラックから順に探す（テロップのみのプロジェクト等）
+  if (base && !(base.track && base.track.locked)) return findClip(base.clip.id);
+  // ベーストラックに無ければ上のトラックから順に探す（テロップのみのプロジェクト等）。ロック中は対象外
   for (const tr of tracksBottomToTop().slice().reverse()) {
+    if (tr.locked) continue;
     for (const c of tr.clips) {
       if (t > c.start + 1e-6 && t < clipEnd(c) - 1e-6) return { track: tr, clip: c };
     }
@@ -302,6 +303,7 @@ function makeSub(c, t0, t1, newStart) {
 function extractRangeInPlace(p, a, b) {
   const len = b - a;
   for (const track of p.tracks) {
+    if (track.locked) continue; // ロック中のトラックはリップルの対象外（PPと同挙動）
     const out = [];
     for (const c of track.clips) {
       const cs = c.start, ce = clipEnd(c);
@@ -319,6 +321,11 @@ function extractRangeInPlace(p, a, b) {
     }
     out.sort((x, y) => x.start - y.start);
     track.clips = out;
+  }
+  // マーカーも追従：範囲内は削除、範囲より後ろは左へシフト
+  if (Array.isArray(p.markers)) {
+    p.markers = p.markers.filter((m) => m.t <= a + 1e-6 || m.t >= b - 1e-6);
+    for (const m of p.markers) { if (m.t >= b - 1e-6) m.t -= len; }
   }
 }
 

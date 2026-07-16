@@ -193,6 +193,13 @@ export function getRange() { return state.ui.range; }
 export function setRange(r) { state.ui.range = r; emit('range'); }
 export function clearRange() { state.ui.range = null; emit('range'); }
 
+// Cmd+A: 全クリップ選択（ロック中のトラックは対象外）
+export function selectAllClips() {
+  const ids = [];
+  for (const tr of state.project.tracks) { if (tr.locked) continue; for (const c of tr.clips) ids.push(c.id); }
+  setMultiSelection(ids);
+}
+
 // ---- スナップ（マグネット吸着）のON/OFF。localStorage で永続化 ----
 let snapOn = (typeof localStorage !== 'undefined' && localStorage.getItem('clipai.snap') !== '0');
 export function getSnap() { return snapOn; }
@@ -478,6 +485,28 @@ export function removeTrack(id) {
 }
 
 // トラックの音声ミュート切替（映像だけ流す）。返り値は新しい muted 状態。
+// トラックロック（🔒）: ロック中はドラッグ・トリム・選択・配置・リップルの対象外
+export function toggleTrackLock(id) {
+  const tr = state.project.tracks.find((t) => t.id === id);
+  if (!tr) return false;
+  pushHistory();
+  tr.locked = !tr.locked;
+  markDirty();
+  emit('project');
+  return !!tr.locked;
+}
+
+// 映像トラックの表示ON/OFF（👁）: プレビューと書き出しの両方から除外（ベースは不可）
+export function toggleTrackHidden(id) {
+  const tr = state.project.tracks.find((t) => t.id === id);
+  if (!tr || tr.base) return false;
+  pushHistory();
+  tr.hidden = !tr.hidden;
+  markDirty();
+  emit('project');
+  return !!tr.hidden;
+}
+
 export function toggleTrackMute(id) {
   const tr = state.project.tracks.find((t) => t.id === id);
   if (!tr) return false;

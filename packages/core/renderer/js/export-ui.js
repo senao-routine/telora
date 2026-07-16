@@ -116,6 +116,7 @@ export async function buildExportPayload(opts = {}) {
   const audioClips = []; // 音声トラック＋非ベース動画クリップの音声をここに集約
   for (const track of tracksBottomToTop()) {
     if (track.kind !== 'visual') continue;
+    if (track.hidden && !track.base) continue; // 👁 非表示トラックは書き出しからも除外
     const isBase = !!track.base;
     const videoClips = [];
     const pngs = [];

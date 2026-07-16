@@ -192,7 +192,7 @@ export function addClipFromMedia(mediaId, { silent = false, trackId = null, star
 
     if (isAudio) {
       let track = trackId ? tracks().find((t) => t.id === trackId && t.kind === 'audio') : null;
-      if (!track) track = tracks().find((t) => t.kind === 'audio');
+      if (!track) track = tracks().find((t) => t.kind === 'audio' && !t.locked);
       if (!track) { track = { id: uid('trk'), kind: 'audio', name: 'A' + (tracks().filter((t) => t.kind === 'audio').length + 1), clips: [] }; p.tracks.push(track); }
       const desired = start != null ? Math.max(0, start) : getPlayhead();
       clip.start = slotFree(track, desired, dur) ? desired : findFreeSlot(track, desired, dur, null);
@@ -201,8 +201,8 @@ export function addClipFromMedia(mediaId, { silent = false, trackId = null, star
       return;
     }
 
-    // 視覚素材（動画・画像）
-    const visuals = () => p.tracks.filter((t) => t.kind === 'visual');
+    // 視覚素材（動画・画像）。ロック中のトラックは配置先候補から除外
+    const visuals = () => p.tracks.filter((t) => t.kind === 'visual' && !t.locked);
     if (start == null) {
       // ビンからの追加：ベース（最下段）visual トラックへ順次追加
       let track = visuals()[visuals().length - 1];

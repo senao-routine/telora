@@ -189,6 +189,7 @@ function syncVideoTracks(t, shouldPlay) {
   const base = baseTrack();
   for (const track of getProject().tracks) {
     if (track.kind !== 'visual' || track === base) continue;
+    if (track.hidden) { const hid = trackVideoEls.get(track.id); if (hid && !hid.paused) hid.pause(); continue; }
     const el = getTrackVideoEl(track.id);
     const c = clipAtTimeOnTrack(track, t);
     if (c && c.kind === 'video') {
@@ -399,6 +400,7 @@ export function render(t) {
   // クリップの kind（video/image/text）ごとに描画する。
   for (const track of tracksBottomToTop()) {
     if (track.kind !== 'visual') continue; // audio は描画対象外
+    if (track.hidden && !track.base) continue; // 👁 非表示トラックは合成しない
     const isBase = !!track.base;
     for (const c of track.clips) {
       if (t < c.start - 1e-6 || t >= clipEnd(c) + 1e-6) continue;
