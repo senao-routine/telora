@@ -1,8 +1,9 @@
 // 編集操作：分割・削除・テロップ追加・再生位置での前後カット
 import {
-  getProject, mutate, getPlayhead, getSelection, setSelection, findClip,
+  getProject, mutate, getPlayhead, setPlayhead, getSelection, setSelection, findClip,
   clipDur, clipEnd, baseClipAtTime, defaultTextClip, getTracks, totalDuration,
-  slotFree, MIN_CLIP, getSelectedIds, getSelectedClips, setMultiSelection, clipSpeed,
+  slotFree, MIN_CLIP, getSelectedIds, getSelectedClips, setMultiSelection, clipSpeed, setRange,
+  tracksBottomToTop,
 } from './state.js';
 import { uid } from './util.js';
 import { findFreeSlot } from './media.js';
@@ -46,7 +47,7 @@ export function resolveOverwrite(track, winnerIds) {
   return changed;
 }
 
-// 再生位置にかかっている対象クリップ（選択優先、無ければベース動画）
+// 再生位置にかかっている対象クリップ（選択優先 → ベース動画 → 上位トラックの順）
 function targetClipAtPlayhead() {
   const t = getPlayhead();
   const sel = getSelection();
@@ -56,6 +57,12 @@ function targetClipAtPlayhead() {
   }
   const base = baseClipAtTime(t);
   if (base) return findClip(base.clip.id);
+  // ベーストラックに無ければ上のトラックから順に探す（テロップのみのプロジェクト等）
+  for (const tr of tracksBottomToTop().slice().reverse()) {
+    for (const c of tr.clips) {
+      if (t > c.start + 1e-6 && t < clipEnd(c) - 1e-6) return { track: tr, clip: c };
+    }
+  }
   return null;
 }
 
@@ -343,6 +350,71 @@ export function rippleDeleteSelection() {
   setSelection(null);
   const total = merged.reduce((sum, m) => sum + (m[1] - m[0]), 0);
   toast(`リップル削除: ${total.toFixed(1)}秒 を詰めました（全トラック）`);
+}
+
+// Q: 対象クリップの先頭〜再生ヘッドをリップルトリム（詰めてカット・PPのQ相当）
+export function rippleTrimBefore() {
+  const f = targetClipAtPlayhead();
+  if (!f) { toast('再生位置にクリップがありません', 'err'); return; }
+  const t = getPlayhead();
+  const a = f.clip.start;
+  if (t - a < MIN) { toast('カット幅が小さすぎます', 'err'); return; }
+  if (clipEnd(f.clip) - t < MIN) { toast('残る部分が短すぎます', 'err'); return; }
+  mutate((p) => { extractRangeInPlace(p, a, t); });
+  setPlayhead(a); // 詰めた後の編集点に再生ヘッドを合わせる（PPと同挙動）
+  toast(`前を ${(t - a).toFixed(1)}秒 詰めてカット（Q）`);
+}
+
+// W: 再生ヘッド〜対象クリップ末尾をリップルトリム（詰めてカット・PPのW相当）
+export function rippleTrimAfter() {
+  const f = targetClipAtPlayhead();
+  if (!f) { toast('再生位置にクリップがありません', 'err'); return; }
+  const t = getPlayhead();
+  const b = clipEnd(f.clip);
+  if (b - t < MIN) { toast('カット幅が小さすぎます', 'err'); return; }
+  if (t - f.clip.start < MIN) { toast('残る部分が短すぎます', 'err'); return; }
+  mutate((p) => { extractRangeInPlace(p, t, b); });
+  toast(`後ろを ${(b - t).toFixed(1)}秒 詰めてカット（W）`);
+}
+
+// X: 再生ヘッド下のクリップ範囲をイン-アウトにマーク（PPのX相当）
+export function markClipRange() {
+  const f = targetClipAtPlayhead();
+  if (!f) { toast('再生位置にクリップがありません', 'err'); return; }
+  setRange({ start: f.clip.start, end: clipEnd(f.clip), source: 'io' });
+}
+
+// 指定トラック上の時刻 t にあるギャップ [a,b] を返す。
+// 他トラックのクリップが区間に食い込む場合は b を安全側にクランプ（内容の削除ゼロ＝純粋な左詰めだけ許可）
+export function gapAtTime(trackId, t) {
+  const tr = getTracks().find((x) => x.id === trackId);
+  if (!tr) return null;
+  let a = 0, next = null;
+  for (const c of tr.clips) {
+    const ce = clipEnd(c);
+    if (ce <= t + 1e-6) { if (ce > a) a = ce; }
+    else if (c.start >= t - 1e-6) { if (next == null || c.start < next) next = c.start; }
+    else return null; // t がクリップ内 → ギャップではない
+  }
+  if (next == null) return null; // 末尾側にクリップが無ければ詰める対象なし
+  let b = next;
+  for (const other of getTracks()) {
+    for (const c of other.clips) {
+      const ce = clipEnd(c);
+      if (ce <= a + 1e-6) continue;
+      if (c.start <= a + 1e-6) return null; // ギャップ起点が他トラックのクリップに覆われている
+      if (c.start < b) b = c.start;
+    }
+  }
+  return (b - a) >= 0.02 ? { a, b } : null;
+}
+
+// ギャップの右クリック「詰める」：内容を消さず全トラックを左へシフトする
+export function closeGapAt(trackId, t) {
+  const g = gapAtTime(trackId, t);
+  if (!g) { toast('ここに詰められるギャップはありません', 'err'); return; }
+  mutate((p) => { extractRangeInPlace(p, g.a, g.b); });
+  toast(`ギャップ ${(g.b - g.a).toFixed(1)}秒 を詰めました（全トラック）`);
 }
 
 // Alt+←/→: 選択クリップのキーボードナッジ。ドラッグ移動と同じ上書き解決を通す

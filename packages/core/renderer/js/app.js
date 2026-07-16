@@ -1,12 +1,12 @@
 // アプリ起動・全モジュールの結線
-import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides, shuttle, getPlayRate } from './preview.js';
+import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides, shuttle, getPlayRate, playRange } from './preview.js';
 import { initTimeline, zoomIn, zoomOut, zoomFit, ensurePlayheadVisible } from './timeline.js';
 import { initInspector } from './inspector.js';
 import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './media.js';
 import {
   splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, deleteSelectedRange,
   copySelection, pasteClipboard, cutSelection, duplicateSelection, applyCrossfade,
-  rippleDeleteSelection, nudgeSelection,
+  rippleDeleteSelection, nudgeSelection, rippleTrimBefore, rippleTrimAfter, markClipRange,
 } from './edit.js';
 import { runExport } from './export-ui.js';
 import { saveProject, openProject, openProjectPath, getRecents, updateTitle } from './project-io.js';
@@ -19,7 +19,7 @@ import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
   getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead, nextEditPoint,
-  markIn, markOut, clearRange, getSnap, toggleSnap,
+  markIn, markOut, clearRange, getSnap, toggleSnap, getRange,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -317,6 +317,14 @@ function wireKeyboard() {
     if (mod && e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + 1); return; }
     if (mod) return; // 単独キーのショートカットは修飾キー併用時は無効化
 
+    // Shift+Space: イン-アウト間だけ再生（末尾で自動停止）
+    if (e.code === 'Space' && e.shiftKey) {
+      e.preventDefault();
+      const r = getRange();
+      if (r && r.end - r.start > 0.02) playRange(r.start, r.end);
+      else toast('イン-アウト範囲がありません（I／O または X で設定）', 'err');
+      return;
+    }
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
     // J/K/L シャトル（Premiere Pro 互換）: L=順方向 1→2→4→8倍、J=逆方向 -1→-2→-4倍、K=停止
     if (e.key.toLowerCase() === 'l') {
@@ -334,8 +342,16 @@ function wireKeyboard() {
     if (e.key.toLowerCase() === 'k') { e.preventDefault(); pause(); return; }
     // I/O イン・アウト点（Premiere Pro 互換）。Alt+X でクリア（Alt+英字は e.code で判定：macOS では key が記号になるため）
     if (e.altKey && e.code === 'KeyX') { e.preventDefault(); clearRange(); return; }
+    // Shift+I / Shift+O = イン点／アウト点へジャンプ
+    if (e.shiftKey && !e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); const r = getRange(); if (r) seek(r.start); return; }
+    if (e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); const r = getRange(); if (r) seek(r.end); return; }
     if (!e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); markIn(); return; }
     if (!e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); markOut(); return; }
+    // X = 再生ヘッド下のクリップをイン-アウトにマーク
+    if (!e.altKey && e.key.toLowerCase() === 'x') { e.preventDefault(); markClipRange(); return; }
+    // Q/W = リップルトリム（クリップ先頭〜ヘッド／ヘッド〜クリップ末尾を詰めてカット）
+    if (e.key.toLowerCase() === 'q') { e.preventDefault(); rippleTrimBefore(); return; }
+    if (e.key.toLowerCase() === 'w') { e.preventDefault(); rippleTrimAfter(); return; }
     if (e.key.toLowerCase() === 'r') { e.preventDefault(); toggleRangeTool(); return; }   // 範囲選択モード切替
     if (e.key === 'Escape') { e.preventDefault(); setTool('select'); return; }              // 選択モードへ戻す
     if (e.key === 'Backspace' || e.key === 'Delete') {

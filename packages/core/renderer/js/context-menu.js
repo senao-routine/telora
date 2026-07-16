@@ -1,5 +1,5 @@
 // 右クリック／トラックパッド2本指タップで開くコンテキストメニュー（共通部品）。
-// items: [{ label, onClick, danger? } | { sep:true }]
+// items: [{ label, onClick, danger?, disabled? } | { sep:true }]
 import { el } from './util.js';
 
 let current = null;
@@ -19,8 +19,8 @@ export function showContextMenu(x, y, items) {
     it && it.sep
       ? el('div', { class: 'ctx-sep' })
       : el('div', {
-        class: 'ctx-item' + (it.danger ? ' danger' : ''),
-        onClick: () => { close(); try { it.onClick && it.onClick(); } catch (_) {} },
+        class: 'ctx-item' + (it.danger ? ' danger' : '') + (it.disabled ? ' disabled' : ''),
+        onClick: () => { if (it.disabled) return; close(); try { it.onClick && it.onClick(); } catch (_) {} },
       }, [it.label])
   )));
   menu.style.left = x + 'px';

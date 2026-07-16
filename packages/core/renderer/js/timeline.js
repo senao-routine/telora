@@ -9,7 +9,7 @@ import {
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
 import { getFrame, requestFrame, FRAME_W } from './filmstrip.js';
-import { resolveOverwrite, splitAtPlayhead, cutBefore, cutAfter, duplicateSelection, deleteSelection, rippleDeleteSelection } from './edit.js';
+import { resolveOverwrite, splitAtPlayhead, cutBefore, cutAfter, duplicateSelection, deleteSelection, rippleDeleteSelection, gapAtTime, closeGapAt } from './edit.js';
 import { silenceCut, fillerCut } from './cut-tools.js';
 import { showContextMenu } from './context-menu.js';
 import { seek } from './preview.js';
@@ -61,6 +61,20 @@ export function initTimeline() {
   ruler.addEventListener('pointerdown', (e) => startScrub(e));
   scrollEl.addEventListener('pointerdown', (e) => {
     if (e.target.classList && (e.target.classList.contains('track') || e.target === content || e.target === tracksEl)) startBodyDrag(e);
+  });
+  // トラック空白部の右クリック＝ギャップメニュー（クリップ上は各クリップのメニューが stopPropagation 済み）
+  tracksEl.addEventListener('contextmenu', (e) => {
+    if (e.target.closest && e.target.closest('.clip')) return;
+    e.preventDefault();
+    const trackId = trackRowAtY(e.clientY);
+    if (!trackId) return;
+    const t = Math.max(0, contentX(e.clientX) / px());
+    const g = gapAtTime(trackId, t);
+    showContextMenu(e.clientX, e.clientY, [
+      g
+        ? { label: `⇤ ギャップを詰める（${(g.b - g.a).toFixed(1)}秒・全トラック）`, onClick: () => closeGapAt(trackId, t) }
+        : { label: 'ここに詰められるギャップはありません', disabled: true },
+    ]);
   });
   playheadEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); startScrub(e, true); });
 

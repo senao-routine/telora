@@ -20,6 +20,7 @@ let pendingSeek = false;
 let rafId = null;
 let wallStartPerf = 0, wallStartT = 0;
 let playRate = 1; // JKLシャトル再生レート。1=通常。負=逆再生（メディアはシーク描画で追従）
+let playStopAt = null; // イン-アウト再生（Shift+Space）の自動停止位置。通常再生では null
 let hitBoxes = [];
 let dragState = null;
 let guidesOn = (typeof localStorage !== 'undefined' && localStorage.getItem('telora.guides') === '1');
@@ -537,8 +538,10 @@ function tick() {
   if (isPlaying()) {
     const total = totalDuration();
     const t = wallStartT + ((performance.now() - wallStartPerf) / 1000) * playRate;
-    if (playRate > 0 ? t >= total : t <= 0) {
-      const endT = playRate > 0 ? total : 0;
+    const stopAt = playStopAt != null ? Math.min(playStopAt, total) : total;
+    if (playRate > 0 ? t >= stopAt : t <= 0) {
+      const endT = playRate > 0 ? stopAt : 0;
+      playStopAt = null;
       setPlayhead(endT); syncBaseVideo(endT, false); syncVideoTracks(endT, false); syncAudioClips(endT, false); render(endT); setPlaying(false);
       if (video && !video.paused) video.pause();
       playRate = 1; updateRateLabel();
@@ -565,6 +568,7 @@ export function play() {
   if (total <= 0) return;
   if (getPlayhead() >= total - 0.02) setPlayhead(0);
   playRate = 1; // Space 再生は常に等速
+  playStopAt = null;
   wallStartPerf = performance.now();
   wallStartT = getPlayhead();
   setPlaying(true);
@@ -573,7 +577,7 @@ export function play() {
 export function pause() {
   if (video && !video.paused) video.pause();
   stopAllAudio(); stopAllTrackVideos(); setPlaying(false);
-  playRate = 1; updateRateLabel();
+  playRate = 1; playStopAt = null; updateRateLabel();
 }
 export function stop() { pause(); }
 export function togglePlay() { if (isPlaying()) pause(); else play(); }
@@ -597,6 +601,7 @@ export function shuttle(rate) {
   if (rate > 0 && t >= total - 0.02) t = 0;       // 末尾から順再生は先頭へ
   if (rate < 0 && t <= 0.02) { pause(); return; }  // 先頭で逆再生は何もしない
   playRate = rate;
+  playStopAt = null;
   setPlayhead(t);
   wallStartPerf = performance.now();
   wallStartT = t;
@@ -605,11 +610,19 @@ export function shuttle(rate) {
   updateRateLabel();
 }
 
+// イン-アウト間再生（Shift+Space）: a から等速再生し b で自動停止する
+export function playRange(a, b) {
+  const total = totalDuration();
+  if (total <= 0 || b - a < 0.02) return;
+  seek(clamp(a, 0, total), { play: true });
+  playStopAt = clamp(b, a + 0.02, total);
+}
+
 export function seek(t, { play: doPlay = false } = {}) {
   dragState = null;
   t = clamp(t, 0, totalDuration());
   setPlayhead(t);
-  playRate = 1; updateRateLabel(); // シークでシャトルは解除（Premiere と同挙動）
+  playRate = 1; playStopAt = null; updateRateLabel(); // シークでシャトル・範囲再生は解除（Premiere と同挙動）
   if (doPlay) { wallStartPerf = performance.now(); wallStartT = t; setPlaying(true); }
   else { setPlaying(false); syncBaseVideo(t, false); render(t); }
 }

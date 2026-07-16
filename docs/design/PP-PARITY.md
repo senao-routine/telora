@@ -80,19 +80,19 @@
 
 ## P1
 
-- [ ] PP011 [M] Q/W リップルトリム（再生ヘッドまで前/後を詰めてカット）
+- [x] PP011 [M] Q/W リップルトリム（再生ヘッドまで前/後を詰めてカット）
   - PP挙動: PP の Q=前の編集点から再生ヘッドまでをリップルトリム、W=再生ヘッドから次の編集点まで。ジェットカット編集の最速手段。
   - 方針: PP009 で抽出した deleteRange(a,b) を流用。Q: targetClipAtPlayhead（edit.js:50）で対象クリップを特定し deleteRange(clip.start, playhead)、W: deleteRange(playhead, clipEnd(clip))。端 MIN_CLIP ガードは cutBefore/cutAfter（edit.js:99,115）と同基準。wireKeyboard の単独キー領域に q/w を追加。既存 A/D（非リップル）はそのまま維持し、toast 文言を「詰めてカット」（Q/W）と「トリムのみ」（A/D）で書き分ける。
   - 対象: packages/core/renderer/js/edit.js, packages/core/renderer/js/app.js
   - 検証: tests/run-commands.js に Q/W 相当の回帰（後続クリップの start が詰まる）を追加。TCE_EVAL で speed≠1 クリップでも in/out が破綻しないこと。npm run test:fast。
   - 競合: Q/W は未割当。A/D と機能が隣接するため UI 文言での区別が必須（キー自体の競合はなし）。
-- [ ] PP012 [M] イン-アウト補助操作（Shift+I/Oジャンプ・X=クリップをマーク・Shift+Space=イン-アウト再生）
+- [x] PP012 [M] イン-アウト補助操作（Shift+I/Oジャンプ・X=クリップをマーク・Shift+Space=イン-アウト再生）
   - PP挙動: PP は Shift+I/O でイン/アウトへジャンプ、X で再生ヘッド下のクリップをイン-アウトにマーク、イン-アウト間だけを再生して確認できる。
   - 方針: PP003 の I/O 基盤上に追加。Shift+I/Shift+O=getRange() の start/end へ seek。X=targetClipAtPlayhead（edit.js:50）のクリップ範囲を markIn/markOut に設定。Shift+Space=イン-アウト間再生: preview.js に playRange(a,b) を追加（seek(a,{play:true}) ＋ tick（preview.js:539）の停止判定に stopAt を追加し b で自動停止、通常再生時は stopAt=null）。
   - 対象: packages/core/renderer/js/app.js, packages/core/renderer/js/preview.js, packages/core/renderer/js/state.js
   - 検証: 手動: X→Shift+Space でクリップ区間だけ再生され末尾で停止。TCE_EVAL で stopAt 到達後 isPlaying()===false。npm run test:fast。
   - 競合: X 単独は未割当（Cmd+X 切り取りとは修飾キーで区別）。Shift+Space も未割当。tick の停止判定（totalDuration 到達 preview.js:539）に条件を足すため PP001/PP002 の後に実装する。
-- [ ] PP013 [M] ギャップの右クリック「ギャップを詰める（リップル削除）」
+- [x] PP013 [M] ギャップの右クリック「ギャップを詰める（リップル削除）」
   - PP挙動: PP はクリップ間のギャップを右クリック→リップル削除で一発で詰められる。
   - 方針: トラック行の空白部に contextmenu リスナを追加（現状は クリップ timeline.js:227 と素材 media.js:297 のみ）。クリック時刻 t のトラックで clipAtTimeOnTrack が null なら前後クリップから gap=[prevEnd, nextStart]（先頭ギャップは [0, firstStart]）を算出し、PP009 の deleteRange(gap) を実行。他トラックのクリップがその区間に重なる場合は詰め幅を安全側にクランプ（全トラックの重なりチェック）。context-menu.js に disabled 対応を最小追加し、ギャップ以外では項目を減色表示。
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/edit.js, packages/core/renderer/js/context-menu.js
@@ -205,3 +205,4 @@
 - 2026-07-16 / PP003 / I/Oイン・アウト点（I=イン・O=アウト・Alt+X=クリア。片側のみ打つと反対端は0/全体尺で補完。既存rangeモデル共有でsource:'io'の範囲はツール切替でも消えず、範囲削除ボタンがそのまま効く。帯はルーラーまで伸びブラケット表示）/ TCE_EVAL実測: I@1s→[1,9]・O@7s→[1,7]・Escape後も保持・Alt+Xでクリア・エラー0、test:fast 30アサート全緑
 - 2026-07-16 / PP004+PP005+PP006+PP007 / スナップトグルN（磁石ボタン・localStorage永続化・OFF時はガイド線も抑制）／ズームキー =/-/\（\=全体フィット・ズーム後は再生ヘッド追従）／Cmd+K分割追加（Cmd+B・S維持、メニューに併記）／矢印粒度をPP標準化（Shift+←→=5コマ、旧1秒はCmd+←→へ移設） / TCE_EVAL実測: 1コマ0.03s・5コマ0.20s・Cmd1.00s・分割1→2・スナップON/OFF/永続化・ズーム80→64→80px+フィット、npm testフル全緑（同一ファイル交差のため4件を1コミットに統合）
 - 2026-07-16 / PP008+PP009+PP010 / Alt+←→ナッジ（1コマ・Shiftで5コマ・mutate1回=undo1段・ドラッグと同じ上書き解決）／Shift+Deleteリップル削除（選択クリップ区間を統合し全トラック左詰め・右クリックメニューにも追加・共通コアextractRangeInPlaceを抽出）／メニューのSpace/Deleteアクセラレータ撤去（テキスト入力からのキー奪取を解消・ラベルにキー表記残し）。既存バグ修正: 範囲リップル削除でテキストクリップのendが未シフトで尺が伸びる問題 / TCE_EVAL実測: リップル後240px→0・ナッジ2.67px/16px・undo2段復帰・エラー0、npm testフル全緑
+- 2026-07-16 / PP011+PP012+PP013 / Q/Wリップルトリム（クリップ先頭〜ヘッド／ヘッド〜末尾を詰めてカット・Q後はヘッドを編集点へ）／I-O補助（Shift+I/O=イン/アウトへジャンプ・X=ヘッド下クリップをマーク・Shift+Space=イン-アウト間再生で自動停止 playStopAt）／ギャップ右クリック「詰める」（他トラック食い込みは安全側クランプ・内容削除ゼロの純粋左詰めのみ許可・コンテキストメニューにdisabled対応追加）。改善: targetClipAtPlayhead が選択なし時に上位トラックへフォールバック（テロップのみのプロジェクトでQ/W/X/分割が効くように） / TCE_EVAL実測: X=[0,240]マーク・Q後[0,160][160,240]+ヘッド0・W後[0,80]・範囲再生1.5→2.00自動停止・ギャップ1.0秒詰め、test:fast全緑
