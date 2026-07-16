@@ -359,6 +359,44 @@ export function rippleDeleteSelection() {
   toast(`リップル削除: ${total.toFixed(1)}秒 を詰めました（全トラック）`);
 }
 
+// Cmd+Shift+K: 再生ヘッド位置で全トラックを一括分割（ロック中トラックは除外）
+export function splitAllAtPlayhead() {
+  const t = getPlayhead();
+  let hit = false;
+  for (const tr of getTracks()) {
+    if (tr.locked) continue;
+    for (const c of tr.clips) {
+      const local = t - c.start;
+      if (local >= MIN && local <= clipDur(c) - MIN) { hit = true; break; }
+    }
+    if (hit) break;
+  }
+  if (!hit) { toast('分割位置にクリップがありません', 'err'); return; }
+  let count = 0;
+  mutate((p) => {
+    for (const tr of p.tracks) {
+      if (tr.locked) continue;
+      const added = [];
+      for (const c of tr.clips) {
+        const local = t - c.start;
+        if (local < MIN || local > clipDur(c) - MIN) continue;
+        let second;
+        if (c.kind === 'text') {
+          second = Object.assign({}, c, { id: uid('text'), start: t, end: c.end });
+          c.end = t;
+        } else {
+          const srcSplit = c.in + local * clipSpeed(c);
+          second = { id: uid('clip'), kind: c.kind, mediaId: c.mediaId, in: srcSplit, out: c.out, start: t, speed: c.speed, volume: c.volume, fadeIn: 0, fadeOut: c.fadeOut, transform: c.transform ? Object.assign({}, c.transform) : undefined };
+          c.out = srcSplit; c.fadeOut = 0;
+        }
+        added.push(second); count += 1;
+      }
+      if (added.length) { tr.clips.push(...added); track_sort(tr); }
+    }
+  });
+  toast(`${count}クリップを分割しました（全トラック）`);
+}
+
 // Q: 対象クリップの先頭〜再生ヘッドをリップルトリム（詰めてカット・PPのQ相当）
 export function rippleTrimBefore() {
   const f = targetClipAtPlayhead();

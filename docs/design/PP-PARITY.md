@@ -122,19 +122,19 @@
   - 対象: packages/core/renderer/js/state.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/preview.js
   - 検証: 手動: 上位トラックの目を OFF→プレビューから消え、クリック当たり判定も下のクリップに抜ける。TCE_CAPTURE で表示OFF前後のキャプチャ比較。npm run test:fast。
   - 競合: 音声ミュート（toggleTrackMute state.js:451-459）とはボタン・フィールドとも独立させ、既存のミュート挙動は変更しない。
-- [ ] PP018 [S] タイムコード直接入力（再生ヘッド位置の数値ジャンプ）
+- [x] PP018 [S] タイムコード直接入力（再生ヘッド位置の数値ジャンプ）
   - PP挙動: PP はプログラムモニタのタイムコードをクリックして数値入力→その位置へジャンプ。+/-入力で相対移動もできる。
   - 方針: playheadTimeEl（timeline.js:271）をクリックで input 要素に差し替え、Enter で parse して seek、Esc/blur で表示に復帰。受理形式: '90'（秒）・'1:23'・'1:23.15'（分:秒.小数）・'+2'/'-0.5'（相対）。フォーカス中は input 要素なので isTyping ガード（app.js:282-287）が自動で効き、単独キーショートカットと干渉しない。パースは 10行程度の純関数にして単体テスト可能に。
   - 対象: packages/core/renderer/js/timeline.js
   - 検証: 手動: 表示クリック→'1:30' Enter で 90 秒へ・'+5' で相対移動・Esc で取消。パース純関数は tests/ の Node 標準 assert で回帰。npm run test:fast。
   - 競合: なし。
-- [ ] PP019 [S] Cmd+Shift+K 全トラック一括分割
+- [x] PP019 [S] Cmd+Shift+K 全トラック一括分割
   - PP挙動: PP の Cmd+Shift+K は再生ヘッド位置で全トラックに編集点を追加（複数レイヤーの一括ジェットカット準備）。
   - 方針: splitAtPlayhead（edit.js:63-90）の分割本体を clip 引数版 splitClipAt(track, clip, t) に抽出し、既存関数と新設 splitAllAtPlayhead() の両方から呼ぶ。新設側は mutate 1回で全トラックの clipAtTimeOnTrack(t)（state.js:236）に該当する全クリップを分割（端 MIN ガードで自然にスキップ、ロック行は PP016 導入後スキップ）。wireKeyboard の mod 領域に Cmd+Shift+K を追加し、メニュー「編集」にも項目追加。
   - 対象: packages/core/renderer/js/edit.js, packages/core/renderer/js/app.js, packages/core/main/main.js
   - 検証: tests/run-commands.js に3トラック重なり状態での一括分割回帰を追加（クリップ数が期待通り増える・undo 1段）。npm run test:fast。
   - 競合: Cmd+Shift+K は未割当。splitAt コマンド（edit-commands.js）の既存挙動（単一クリップ分割）は変更しない。
-- [ ] PP020 [S] 編集メニューの整備（undo/redo・コピー系・リップル削除・ズームをメニューに露出）
+- [x] PP020 [S] 編集メニューの整備（undo/redo・コピー系・リップル削除・ズームをメニューに露出）
   - PP挙動: PP は全操作がメニューバーに並び、ショートカット未習得ユーザーでもマウスで到達できる（発見可能性）。
   - 方針: buildMenu の「編集」に 取り消し/やり直し・コピー/貼り付け/切り取り/複製・リップル削除、「表示」にタイムラインの拡大/縮小/全体表示（menu-zoom-in/out/fit チャンネル新設）を追加。onMenu は汎用パススルー（preload.js:67-70）のため preload 変更不要＝FROZEN 制約に抵触しない。wireMenu（app.js:265-280）に対応ハンドラを追加。undo/redo は accelerator を付けず label 表記のみ（メニューに載せるとテキスト欄の OS ネイティブ undo を奪うため・PP010 と同方針）。
   - 対象: packages/core/main/main.js, packages/core/renderer/js/app.js
@@ -207,3 +207,4 @@
 - 2026-07-16 / PP008+PP009+PP010 / Alt+←→ナッジ（1コマ・Shiftで5コマ・mutate1回=undo1段・ドラッグと同じ上書き解決）／Shift+Deleteリップル削除（選択クリップ区間を統合し全トラック左詰め・右クリックメニューにも追加・共通コアextractRangeInPlaceを抽出）／メニューのSpace/Deleteアクセラレータ撤去（テキスト入力からのキー奪取を解消・ラベルにキー表記残し）。既存バグ修正: 範囲リップル削除でテキストクリップのendが未シフトで尺が伸びる問題 / TCE_EVAL実測: リップル後240px→0・ナッジ2.67px/16px・undo2段復帰・エラー0、npm testフル全緑
 - 2026-07-16 / PP011+PP012+PP013 / Q/Wリップルトリム（クリップ先頭〜ヘッド／ヘッド〜末尾を詰めてカット・Q後はヘッドを編集点へ）／I-O補助（Shift+I/O=イン/アウトへジャンプ・X=ヘッド下クリップをマーク・Shift+Space=イン-アウト間再生で自動停止 playStopAt）／ギャップ右クリック「詰める」（他トラック食い込みは安全側クランプ・内容削除ゼロの純粋左詰めのみ許可・コンテキストメニューにdisabled対応追加）。改善: targetClipAtPlayhead が選択なし時に上位トラックへフォールバック（テロップのみのプロジェクトでQ/W/X/分割が効くように） / TCE_EVAL実測: X=[0,240]マーク・Q後[0,160][160,240]+ヘッド0・W後[0,80]・範囲再生1.5→2.00自動停止・ギャップ1.0秒詰め、test:fast全緑
 - 2026-07-16 / PP014+PP015+PP016+PP017 / マーカーをスナップ候補に追加＋リップル時に追従（範囲内は削除・後方はシフト）／Shift+マーキー追加選択＋Cmd+A全クリップ選択（テキスト編集中はOSに委譲）／トラックロック🔒（ドラッグ・トリム・選択・マーキー・Cmd+A・配置・リップル・ドロップの対象外／PPと同じくロック層はリップルで動かない）／映像トラック表示OFF👁（プレビュー合成と書き出しの両方から除外・ベースは不可） / TCE_EVAL実測: マーカー320→80px追従・Cmd+A=2・ロック中選択0＋Q無効・👁クラストグル、test:fast全緑
+- 2026-07-16 / PP018+PP019+PP020 / タイムコード直接入力（時間表示をダブルクリック→ 90 / 1:30 / 0:15.5 形式でジャンプ・不正入力は拒否・Enter/Escape/blurで閉じる）／Cmd+Shift+K 全トラック一括分割（ロック中トラック除外・mutate1回=undo1段・メニューにも追加）／編集メニュー整備（undo/redo・コピー/貼り付け/複製・リップル削除・全トラック分割をラベルのキー表記付きで追加、表示メニューにタイムラインズーム3項目。accelerator は付けず renderer の typing ガードに一本化＝PP010方針の踏襲） / TCE_EVAL実測: 一括分割2→4・undo1回で2・タイムコード2.5sジャンプ・不正入力無視、blur二重removeバグを検証で捕捉し修正、npm testフル全緑

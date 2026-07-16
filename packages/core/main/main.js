@@ -121,11 +121,22 @@ function buildMenu() {
       submenu: [
         // 注: Space/Delete をメニュー accelerator にするとテキスト入力からキーを奪うため、
         // 単独キーは renderer 側（wireKeyboard の typing ガード付き）でのみ処理する
+        // 注: Cmd+Z 等をメニュー accelerator にするとテキスト入力からキーを奪うため、
+        // ラベルにキー表記だけ残し、実発火は renderer 側の keydown（typing ガード付き）に任せる
+        { label: `元に戻す（${isMac ? 'Cmd' : 'Ctrl'}+Z）`, click: send('menu-undo') },
+        { label: `やり直す（Shift+${isMac ? 'Cmd' : 'Ctrl'}+Z）`, click: send('menu-redo') },
+        { type: 'separator' },
+        { label: `コピー（${isMac ? 'Cmd' : 'Ctrl'}+C）`, click: send('menu-copy') },
+        { label: `貼り付け（${isMac ? 'Cmd' : 'Ctrl'}+V）`, click: send('menu-paste') },
+        { label: `複製（${isMac ? 'Cmd' : 'Ctrl'}+D）`, click: send('menu-duplicate') },
+        { type: 'separator' },
         { label: '再生 / 一時停止（Space）', click: send('menu-playpause') },
         { label: `クリップを分割（${isMac ? 'Cmd' : 'Ctrl'}+K / S でも可）`, accelerator: 'CmdOrCtrl+B', click: send('menu-split') },
+        { label: `全トラックで分割（${isMac ? 'Cmd' : 'Ctrl'}+Shift+K）`, click: send('menu-split-all') },
         { label: '再生位置より前をカット', click: send('menu-cut-before') },
         { label: '再生位置より後ろをカット', click: send('menu-cut-after') },
         { label: '選択を削除（Delete / Backspace）', click: send('menu-delete') },
+        { label: 'リップル削除 — 後続を詰める（Shift+Delete）', click: send('menu-ripple-delete') },
         { type: 'separator' },
         { label: 'テロップを追加', accelerator: 'CmdOrCtrl+T', click: send('menu-add-telop') },
       ],
@@ -139,6 +150,10 @@ function buildMenu() {
         { role: 'resetZoom', label: '実際のサイズ' },
         { role: 'zoomIn', label: '拡大' },
         { role: 'zoomOut', label: '縮小' },
+        { type: 'separator' },
+        { label: 'タイムラインを拡大（=）', click: send('menu-zoom-in') },
+        { label: 'タイムラインを縮小（-）', click: send('menu-zoom-out') },
+        { label: 'タイムライン全体を表示（\\）', click: send('menu-zoom-fit') },
         { type: 'separator' },
         { role: 'togglefullscreen', label: 'フルスクリーン' },
       ],

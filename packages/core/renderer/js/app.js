@@ -7,6 +7,7 @@ import {
   splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, deleteSelectedRange,
   copySelection, pasteClipboard, cutSelection, duplicateSelection, applyCrossfade,
   rippleDeleteSelection, nudgeSelection, rippleTrimBefore, rippleTrimAfter, markClipRange,
+  splitAllAtPlayhead,
 } from './edit.js';
 import { runExport } from './export-ui.js';
 import { saveProject, openProject, openProjectPath, getRecents, updateTitle } from './project-io.js';
@@ -19,7 +20,7 @@ import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
   getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead, nextEditPoint,
-  markIn, markOut, clearRange, getSnap, toggleSnap, getRange,
+  markIn, markOut, clearRange, getSnap, toggleSnap, getRange, selectAllClips,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -261,6 +262,7 @@ function wireTimelineToolbar() {
   $('btnGuides').classList.toggle('active', getGuides());
   $('btnSnap').onclick = () => { $('btnSnap').classList.toggle('active', toggleSnap()); };
   $('btnSnap').classList.toggle('active', getSnap());
+  wireTimecodeInput();
   $('btnZoomIn').onclick = zoomIn;
   $('btnZoomOut').onclick = zoomOut;
   $('btnZoomFit').onclick = zoomFit;
@@ -277,6 +279,16 @@ function wireMenu() {
   api.onMenu('menu-export', () => runExport());
   api.onMenu('menu-playpause', () => togglePlay());
   api.onMenu('menu-split', () => splitAtPlayhead());
+  api.onMenu('menu-split-all', () => splitAllAtPlayhead());
+  api.onMenu('menu-undo', () => undo());
+  api.onMenu('menu-redo', () => redo());
+  api.onMenu('menu-copy', () => copySelection());
+  api.onMenu('menu-paste', () => pasteClipboard());
+  api.onMenu('menu-duplicate', () => duplicateSelection());
+  api.onMenu('menu-ripple-delete', () => rippleDeleteSelection());
+  api.onMenu('menu-zoom-in', () => { zoomIn(); ensurePlayheadVisible(); });
+  api.onMenu('menu-zoom-out', () => { zoomOut(); ensurePlayheadVisible(); });
+  api.onMenu('menu-zoom-fit', () => zoomFit());
   api.onMenu('menu-cut-before', () => cutBefore());
   api.onMenu('menu-cut-after', () => cutAfter());
   api.onMenu('menu-delete', () => deleteSelection());
@@ -290,12 +302,50 @@ function isTyping(e) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
 }
 
+// タイムコード直接入力：時間表示をダブルクリック → 数値入力 → Enter でジャンプ
+function parseTimecode(str) {
+  const s = String(str || '').trim().replace(/[：]/g, ':');
+  if (!s) return null;
+  const parts = s.split(':');
+  if (parts.length > 3 || parts.some((x) => !/^\d+(\.\d+)?$/.test(x.trim()))) return null;
+  let sec = 0;
+  for (const p of parts) sec = sec * 60 + parseFloat(p);
+  return Number.isFinite(sec) ? sec : null;
+}
+function wireTimecodeInput() {
+  const readout = document.querySelector('.time-readout');
+  if (!readout) return;
+  readout.title = 'ダブルクリックで時間を入力してジャンプ（例: 90 / 1:30 / 0:15.5）';
+  readout.style.cursor = 'text';
+  readout.addEventListener('dblclick', () => {
+    if (readout.querySelector('.tc-input')) return;
+    const cur = $('curTime');
+    const input = document.createElement('input');
+    input.className = 'tc-input';
+    input.value = cur ? cur.textContent : '';
+    let closed = false; // Enter 直後の blur で二重に remove しないよう冪等化
+    const restore = () => { if (closed) return; closed = true; input.remove(); if (cur) cur.style.display = ''; };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        const t = parseTimecode(input.value);
+        if (t != null) { seek(t); restore(); } else { toast('時間の形式が不正です（例: 90 / 1:30 / 0:15.5）', 'err'); }
+      } else if (e.key === 'Escape') restore();
+    });
+    input.addEventListener('blur', restore);
+    if (cur) cur.style.display = 'none';
+    readout.insertBefore(input, readout.firstChild);
+    input.focus(); input.select();
+  });
+}
+
 function wireKeyboard() {
   window.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey;
     const typing = isTyping(e);
-    // テキスト編集中は標準のコピー/貼付/切取/Undo を OS に任せる
-    if (typing && mod && ['z', 'y', 'c', 'v', 'x'].includes(e.key.toLowerCase())) return;
+    // テキスト編集中は標準のコピー/貼付/切取/Undo/全選択を OS に任せる
+    if (typing && mod && ['z', 'y', 'c', 'v', 'x', 'a'].includes(e.key.toLowerCase())) return;
+    if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAllClips(); return; } // Cmd+A: 全クリップ選択
 
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -309,6 +359,7 @@ function wireKeyboard() {
     if (mod && e.key.toLowerCase() === 'i') { e.preventDefault(); pickAndImport(); return; }
     if (mod && e.key.toLowerCase() === 't') { e.preventDefault(); addTelopAtPlayhead(); return; }
     if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); splitAtPlayhead(); return; }
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); splitAllAtPlayhead(); return; } // 全トラック一括分割
     if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); splitAtPlayhead(); return; } // Premiere Pro互換（編集点を追加）
 
     if (typing) return;
