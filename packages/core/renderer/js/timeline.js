@@ -432,7 +432,11 @@ function startClipDrag(e, track, clip) {
   let groupOrig = null;
   if (inMulti) {
     groupOrig = {};
-    for (const id of getSelectedIds()) { const f = getTrackClip(id); if (f) groupOrig[id] = { start: f.clip.start, end: f.clip.end }; }
+    const tracks = getTracks();
+    for (const id of getSelectedIds()) {
+      const f = getTrackClip(id);
+      if (f) groupOrig[id] = { start: f.clip.start, end: f.clip.end, trackIdx: tracks.indexOf(f.track) };
+    }
   }
   // 履歴は実際に動かした瞬間に積む（単なる選択クリックで undo 履歴を汚さない）
   drag = {
@@ -440,6 +444,7 @@ function startClipDrag(e, track, clip) {
     trackId: track.id, clipId: clip.id, startX: e.clientX, startY: e.clientY, moved: false, historyPushed: false,
     alt: e.altKey, duplicated: false,
     group: inMulti ? getSelectedIds().slice() : null, groupOrig,
+    groupRowIdx: inMulti ? getTracks().indexOf(track) : 0, // グループ縦移動の基準行（primary の開始行）
     origStart: clip.start, origIn: clip.in, origOut: clip.out, origEnd: clip.end,
   };
 }
@@ -477,6 +482,30 @@ function onMove(e) {
       const f = getTrackClip(id); const o = drag.groupOrig[id]; if (!f || !o) continue;
       if (f.clip.kind === 'text') { const d = o.end - o.start; f.clip.start = o.start + appliedDt; f.clip.end = f.clip.start + d; }
       else f.clip.start = o.start + appliedDt;
+    }
+    // 縦方向: primary の行差分を「原点行基準」で全員に適用。1つでも移動先が無い/非互換なら全員据え置き
+    // （PPと同じ全員一致ルール。グループでは新規トラックの自動生成はしない。Alt+複製より group が優先＝既存仕様）
+    const tgtRowId = trackRowAtY(e.clientY);
+    if (tgtRowId) {
+      const tracks = getTracks();
+      const tgtIdx = tracks.findIndex((tr) => tr.id === tgtRowId);
+      if (tgtIdx >= 0) {
+        const rowDelta = tgtIdx - drag.groupRowIdx;
+        let ok = true;
+        const moves = [];
+        for (const id of drag.group) {
+          const o = drag.groupOrig[id]; const f = getTrackClip(id);
+          if (!o || !f) continue;
+          const dst = tracks[o.trackIdx + rowDelta];
+          if (!dst || !trackCompatible(f.clip, dst)) { ok = false; break; }
+          if (dst !== f.track) moves.push([f, dst]);
+        }
+        if (ok) {
+          for (const [f, dst] of moves) relocate(f.track, dst, f.clip);
+          const pf = getTrackClip(drag.clipId);
+          if (pf) drag.trackId = pf.track.id;
+        }
+      }
     }
     updateSnapGuide();
     noteDirty(); emit('project');
