@@ -34,8 +34,9 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
-  // デバッグ用：レンダラのコンソール / 読み込み失敗を標準出力へ
-  if (process.env.TCE_DEBUG) {
+  // デバッグ用：レンダラのコンソール / 読み込み失敗を標準出力へ。
+  // TCE_SMOKE / TCE_EVAL / TCE_CAPTURE は単独指定でも有効（以前は TCE_DEBUG 必須で自動終了せずハングしていた）
+  if (process.env.TCE_DEBUG || process.env.TCE_SMOKE || process.env.TCE_EVAL || process.env.TCE_CAPTURE) {
     const wc = mainWindow.webContents;
     wc.on('console-message', (_e, level, message, line, source) => {
       console.log(`[renderer:${level}] ${message} (${source}:${line})`);
