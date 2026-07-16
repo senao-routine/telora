@@ -59,19 +59,19 @@
   - 対象: packages/core/renderer/js/app.js
   - 検証: TCE_EVAL: fps=30 で Shift+→ 相当の seek 後 getPlayhead() 増分が 5/30 秒。手動で Cmd+→=1秒を確認。npm run test:fast。
   - 競合: 唯一の「既存キーの意味変更」項目（同一キーに2つの意味は載せられないため原則の例外）。既存の Shift+矢印=1秒に慣れたユーザー向けに、1秒ジャンプを Cmd+矢印として存続させることで機能は失わない。リリースノートに明記。
-- [ ] PP008 [M] 選択クリップのキーボードナッジ（Alt+←/→=1フレーム・Alt+Shift=5フレーム）
+- [x] PP008 [M] 選択クリップのキーボードナッジ（Alt+←/→=1フレーム・Alt+Shift=5フレーム）
   - PP挙動: PP はクリップ選択中に修飾キー+矢印でフレーム単位ナッジ。マウスに持ち替えずミリ単位の位置合わせができる。
   - 方針: wireKeyboard に Alt+←/→ を追加：選択があれば mutate() 1回で選択クリップ群の start を ±1/fps（Shift 併用 ±5/fps）移動、選択がなければ何もしない。負方向はグループ内最左クリップが 0 で止まるクランプ（timeline.js:437 と同式）。text クリップは start/end 両方を動かす特例（timeline.js:440 踏襲）。移動後は onUp と同手順（timeline.js:527-536）で各トラック sort → resolveOverwrite（edit.js:21）を実行し、ドラッグ移動と意味論を揃える。mutate 1回に収めて undo 1段を保証。
   - 対象: packages/core/renderer/js/app.js, packages/core/renderer/js/edit.js
   - 検証: TCE_EVAL: クリップ選択→Alt+→ 相当の呼び出しで start が 1/fps 増・Cmd+Z で1回で戻る。重ね合わせ時に resolveOverwrite が効くことを確認。npm run test:fast。
   - 競合: Alt+←/→ は未割当（テキスト欄の単語移動は typing ガードで保護）。PP の Mac 標準は Cmd+←/→ だが本バックログでは1秒ジャンプ（PP007）に使用するため Alt 系（PP の Windows 標準）を採用。
-- [ ] PP009 [M] Shift+Delete リップル削除（選択クリップの区間を詰める・PPの抽出相当）
+- [x] PP009 [M] Shift+Delete リップル削除（選択クリップの区間を詰める・PPの抽出相当）
   - PP挙動: PP の Shift+Delete（リップル削除）/ 抽出。クリップを消すとギャップが自動で閉じ、後続が左に詰まる。カット編集の心臓。
   - 方針: deleteSelectedRange（edit.js:293）の左詰めロジックを範囲引数版の内部関数 deleteRange(a,b)（makeSub edit.js:285 流用）に抽出し、新設 rippleDeleteSelection() が選択クリップの [start,end] 区間群を統合して後ろから順に適用（mutate 1回で undo 1段）。wireKeyboard の Delete 分岐（app.js:315）に e.shiftKey 分岐を追加。クリップ右クリックメニュー（clipContextItems timeline.js:237-258）に「リップル削除（後続を詰める）」を追加。全トラック横断で詰まる仕様（PPの抽出相当）を toast 文言で明示。deleteRange は PP011/PP013 でも再利用する基盤。
   - 対象: packages/core/renderer/js/edit.js, packages/core/renderer/js/app.js, packages/core/renderer/js/timeline.js
   - 検証: tests/run-commands.js に「2クリップ並び→前をリップル削除→後続 start が前詰め」の回帰ケースを追加。npm run test:fast。
   - 競合: Shift+Delete は未割当。既存 Delete=リフト削除（ギャップ残し）は維持し、2つの削除を右クリックメニュー文言で並べて区別。
-- [ ] PP010 [S] メニューアクセラレータ Space/Delete の文字入力妨害を解消
+- [x] PP010 [S] メニューアクセラレータ Space/Delete の文字入力妨害を解消
   - PP挙動: PP ではテキスト編集中にショートカットが奪われることはない。テロップ入力中に Space で再生が走る/Delete でクリップが消えるのは毎分レベルの信頼性問題。
   - 方針: buildMenu の Space（main.js:121）と Delete（main.js:125）の accelerator を撤去し、label に「（Space）」「（Delete）」を付記して表示だけ残す。実発火は renderer の typing ガード付き keydown（app.js:309,312,315）に一本化（既に両キーとも実装済みなので main.js の2行変更のみ）。Cmd 系の二重定義（B/S/O/E/I/T）はメニュー側が先取りするだけで実害がないため今回は据え置き、app.js:296-307 に「メニュー側が正」のコメントを追記。
   - 対象: packages/core/main/main.js, packages/core/renderer/js/app.js
@@ -204,3 +204,4 @@
 - 2026-07-16 / (ハーネス) / TCE_SMOKE・TCE_EVAL・TCE_CAPTURE を TCE_DEBUG なしの単独指定でも有効化（従来はTCE_DEBUG必須で、忘れると自動終了せずハングしていた）/ npm test 全緑
 - 2026-07-16 / PP003 / I/Oイン・アウト点（I=イン・O=アウト・Alt+X=クリア。片側のみ打つと反対端は0/全体尺で補完。既存rangeモデル共有でsource:'io'の範囲はツール切替でも消えず、範囲削除ボタンがそのまま効く。帯はルーラーまで伸びブラケット表示）/ TCE_EVAL実測: I@1s→[1,9]・O@7s→[1,7]・Escape後も保持・Alt+Xでクリア・エラー0、test:fast 30アサート全緑
 - 2026-07-16 / PP004+PP005+PP006+PP007 / スナップトグルN（磁石ボタン・localStorage永続化・OFF時はガイド線も抑制）／ズームキー =/-/\（\=全体フィット・ズーム後は再生ヘッド追従）／Cmd+K分割追加（Cmd+B・S維持、メニューに併記）／矢印粒度をPP標準化（Shift+←→=5コマ、旧1秒はCmd+←→へ移設） / TCE_EVAL実測: 1コマ0.03s・5コマ0.20s・Cmd1.00s・分割1→2・スナップON/OFF/永続化・ズーム80→64→80px+フィット、npm testフル全緑（同一ファイル交差のため4件を1コミットに統合）
+- 2026-07-16 / PP008+PP009+PP010 / Alt+←→ナッジ（1コマ・Shiftで5コマ・mutate1回=undo1段・ドラッグと同じ上書き解決）／Shift+Deleteリップル削除（選択クリップ区間を統合し全トラック左詰め・右クリックメニューにも追加・共通コアextractRangeInPlaceを抽出）／メニューのSpace/Deleteアクセラレータ撤去（テキスト入力からのキー奪取を解消・ラベルにキー表記残し）。既存バグ修正: 範囲リップル削除でテキストクリップのendが未シフトで尺が伸びる問題 / TCE_EVAL実測: リップル後240px→0・ナッジ2.67px/16px・undo2段復帰・エラー0、npm testフル全緑

@@ -6,6 +6,7 @@ import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './
 import {
   splitAtPlayhead, deleteSelection, addTelopAtPlayhead, cutBefore, cutAfter, deleteSelectedRange,
   copySelection, pasteClipboard, cutSelection, duplicateSelection, applyCrossfade,
+  rippleDeleteSelection, nudgeSelection,
 } from './edit.js';
 import { runExport } from './export-ui.js';
 import { saveProject, openProject, openProjectPath, getRecents, updateTitle } from './project-io.js';
@@ -337,7 +338,12 @@ function wireKeyboard() {
     if (!e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); markOut(); return; }
     if (e.key.toLowerCase() === 'r') { e.preventDefault(); toggleRangeTool(); return; }   // 範囲選択モード切替
     if (e.key === 'Escape') { e.preventDefault(); setTool('select'); return; }              // 選択モードへ戻す
-    if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteSelection(); return; } // Backspace: 削除
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      if (e.shiftKey) rippleDeleteSelection(); // Shift+Delete: リップル削除（後続を詰める・PP互換）
+      else deleteSelection();                  // Delete: リフト削除（ギャップを残す）
+      return;
+    }
     if (e.key.toLowerCase() === 's') { e.preventDefault(); splitAtPlayhead(); return; }  // S: 分割
     if (e.key.toLowerCase() === 'a') { e.preventDefault(); cutBefore(); return; }         // A: 前をカット
     if (e.key.toLowerCase() === 'd') { e.preventDefault(); cutAfter(); return; }          // D: 後ろをカット
@@ -356,6 +362,9 @@ function wireKeyboard() {
     if (e.key === '\\') { e.preventDefault(); zoomFit(); return; }
 
     const fps = getProject().settings.fps || 30;
+    // Alt+←/→ = 選択クリップのナッジ（1コマ／Shift併用で5コマ）
+    if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); nudgeSelection(-(e.shiftKey ? 5 : 1) / fps); return; }
+    if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); nudgeSelection((e.shiftKey ? 5 : 1) / fps); return; }
     // ←/→=1フレーム、Shift+←/→=5フレーム（Premiere Pro標準。1秒ジャンプは Cmd+←/→ へ移設）
     if (e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - (e.shiftKey ? 5 / fps : 1 / fps)); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + (e.shiftKey ? 5 / fps : 1 / fps)); return; }

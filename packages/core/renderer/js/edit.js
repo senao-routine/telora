@@ -290,28 +290,80 @@ function makeSub(c, t0, t1, newStart) {
   const srcIn = c.in + (t0 - c.start) * sp;
   return Object.assign({}, c, { id: uid('clip'), in: srcIn, out: srcIn + dur * sp, start: ns, transform: c.transform ? Object.assign({}, c.transform) : undefined });
 }
+// 範囲 [a,b] を全トラックから取り除き、後続を左へ詰める共通コア（mutate 内から呼ぶ）。
+// deleteSelectedRange / rippleDeleteSelection が共有する（PP011/PP013 でも再利用予定）
+function extractRangeInPlace(p, a, b) {
+  const len = b - a;
+  for (const track of p.tracks) {
+    const out = [];
+    for (const c of track.clips) {
+      const cs = c.start, ce = clipEnd(c);
+      if (ce <= a + 1e-6) { out.push(c); continue; }              // 範囲より前
+      if (cs >= b - 1e-6) {                                        // 範囲より後 → 左へ詰める
+        c.start -= len;
+        if (c.kind === 'text') c.end -= len; // テキストは start/end モデル（end を忘れると尺が伸びる）
+        out.push(c); continue;
+      }
+      if (cs >= a - 1e-6 && ce <= b + 1e-6) continue;             // 範囲内 → 削除
+      const spansBoth = cs < a - 1e-6 && ce > b + 1e-6;
+      if (spansBoth) { out.push(makeSub(c, cs, a)); out.push(makeSub(c, b, ce, a)); }
+      else if (cs < a) { out.push(makeSub(c, cs, a)); }           // 左片だけ残す
+      else { out.push(makeSub(c, b, ce, a)); }                    // 右片 → a へ詰める
+    }
+    out.sort((x, y) => x.start - y.start);
+    track.clips = out;
+  }
+}
+
 export function deleteSelectedRange() {
   const r = getRange();
   if (!r || (r.end - r.start) < 0.02) { toast('範囲を選択してください（Rの範囲ツールでドラッグ、または I／O でイン・アウト点）', 'err'); return; }
   const a = r.start, b = r.end, len = b - a;
-  mutate((p) => {
-    for (const track of p.tracks) {
-      const out = [];
-      for (const c of track.clips) {
-        const cs = c.start, ce = clipEnd(c);
-        if (ce <= a + 1e-6) { out.push(c); continue; }              // 範囲より前
-        if (cs >= b - 1e-6) { c.start -= len; out.push(c); continue; } // 範囲より後 → 左へ詰める
-        if (cs >= a - 1e-6 && ce <= b + 1e-6) continue;             // 範囲内 → 削除
-        const spansBoth = cs < a - 1e-6 && ce > b + 1e-6;
-        if (spansBoth) { out.push(makeSub(c, cs, a)); out.push(makeSub(c, b, ce, a)); }
-        else if (cs < a) { out.push(makeSub(c, cs, a)); }           // 左片だけ残す
-        else { out.push(makeSub(c, b, ce, a)); }                    // 右片 → a へ詰める
-      }
-      out.sort((x, y) => x.start - y.start);
-      track.clips = out;
-    }
-  });
+  mutate((p) => { extractRangeInPlace(p, a, b); });
   clearRange();
   setSelection(null);
   toast(`範囲 ${(len).toFixed(1)}秒 を削除しました`);
+}
+
+// Shift+Delete: 選択クリップのリップル削除（Premiere Pro の抽出相当）。
+// 選択クリップの占める区間を統合し、全トラック横断で取り除いて後続を左へ詰める
+export function rippleDeleteSelection() {
+  const found = getSelectedClips();
+  if (!found.length) { toast('リップル削除するクリップを選択してください', 'err'); return; }
+  const spans = found.map((f) => [f.clip.start, clipEnd(f.clip)]).sort((x, y) => x[0] - y[0]);
+  const merged = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], s[1]);
+    else merged.push([s[0], s[1]]);
+  }
+  mutate((p) => {
+    for (let i = merged.length - 1; i >= 0; i--) extractRangeInPlace(p, merged[i][0], merged[i][1]);
+  });
+  setSelection(null);
+  const total = merged.reduce((sum, m) => sum + (m[1] - m[0]), 0);
+  toast(`リップル削除: ${total.toFixed(1)}秒 を詰めました（全トラック）`);
+}
+
+// Alt+←/→: 選択クリップのキーボードナッジ。ドラッグ移動と同じ上書き解決を通す
+export function nudgeSelection(deltaSec) {
+  const ids = getSelectedIds();
+  if (!ids.length || !deltaSec) return;
+  const found = getSelectedClips();
+  if (!found.length) return;
+  const minStart = Math.min(...found.map((f) => f.clip.start));
+  const d = Math.max(deltaSec, -minStart); // 左端は 0 で止める
+  if (Math.abs(d) < 1e-9) return;
+  mutate((p) => {
+    for (const tr of p.tracks) {
+      let touched = false;
+      for (const c of tr.clips) {
+        if (!ids.includes(c.id)) continue;
+        c.start += d;
+        if (c.kind === 'text') c.end += d;
+        touched = true;
+      }
+      if (touched) { tr.clips.sort((x, y) => x.start - y.start); resolveOverwrite(tr, ids); }
+    }
+  });
 }

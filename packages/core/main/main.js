@@ -119,11 +119,13 @@ function buildMenu() {
     {
       label: '編集',
       submenu: [
-        { label: '再生 / 一時停止', accelerator: 'Space', click: send('menu-playpause') },
+        // 注: Space/Delete をメニュー accelerator にするとテキスト入力からキーを奪うため、
+        // 単独キーは renderer 側（wireKeyboard の typing ガード付き）でのみ処理する
+        { label: '再生 / 一時停止（Space）', click: send('menu-playpause') },
         { label: `クリップを分割（${isMac ? 'Cmd' : 'Ctrl'}+K / S でも可）`, accelerator: 'CmdOrCtrl+B', click: send('menu-split') },
         { label: '再生位置より前をカット', click: send('menu-cut-before') },
         { label: '再生位置より後ろをカット', click: send('menu-cut-after') },
-        { label: '選択を削除', accelerator: 'Delete', click: send('menu-delete') },
+        { label: '選択を削除（Delete / Backspace）', click: send('menu-delete') },
         { type: 'separator' },
         { label: 'テロップを追加', accelerator: 'CmdOrCtrl+T', click: send('menu-add-telop') },
       ],

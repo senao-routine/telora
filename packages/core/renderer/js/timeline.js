@@ -9,7 +9,7 @@ import {
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
 import { getFrame, requestFrame, FRAME_W } from './filmstrip.js';
-import { resolveOverwrite, splitAtPlayhead, cutBefore, cutAfter, duplicateSelection, deleteSelection } from './edit.js';
+import { resolveOverwrite, splitAtPlayhead, cutBefore, cutAfter, duplicateSelection, deleteSelection, rippleDeleteSelection } from './edit.js';
 import { silenceCut, fillerCut } from './cut-tools.js';
 import { showContextMenu } from './context-menu.js';
 import { seek } from './preview.js';
@@ -253,7 +253,8 @@ function clipContextItems(track, clip) {
     }
   }
   items.push({ sep: true });
-  items.push({ label: '🗑 削除', danger: true, onClick: () => { sel(); deleteSelection(); } });
+  items.push({ label: '🗑 削除（ギャップを残す）', danger: true, onClick: () => { sel(); deleteSelection(); } });
+  items.push({ label: '⇤ リップル削除（後続を詰める・Shift+Delete）', danger: true, onClick: () => { sel(); rippleDeleteSelection(); } });
   return items;
 }
 
