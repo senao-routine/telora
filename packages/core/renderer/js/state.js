@@ -193,6 +193,16 @@ export function getRange() { return state.ui.range; }
 export function setRange(r) { state.ui.range = r; emit('range'); }
 export function clearRange() { state.ui.range = null; emit('range'); }
 
+// ---- スナップ（マグネット吸着）のON/OFF。localStorage で永続化 ----
+let snapOn = (typeof localStorage !== 'undefined' && localStorage.getItem('clipai.snap') !== '0');
+export function getSnap() { return snapOn; }
+export function toggleSnap() {
+  snapOn = !snapOn;
+  try { localStorage.setItem('clipai.snap', snapOn ? '1' : '0'); } catch (_) {}
+  emit('snap');
+  return snapOn;
+}
+
 // ---- I/O イン・アウト点（Premiere Pro の I/O 相当）----
 // 範囲ツールと同じ ui.range を共有し、片側のみ指定時は反対端を 0／全体尺で補完する
 export function markIn() {

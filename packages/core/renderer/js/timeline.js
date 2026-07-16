@@ -4,7 +4,7 @@ import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
   getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, setMultiSelection, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack, toggleTrackMute,
-  getTool, getRange, setRange, getMarkers,
+  getTool, getRange, setRange, getMarkers, getSnap,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
@@ -278,6 +278,7 @@ function timeAtClientX(clientX) { return clamp(contentX(clientX) / px(), 0, tota
 
 // スナップ候補（0・再生位置・各クリップ端）
 function snapTime(t, ignoreId) {
+  if (!getSnap()) return t; // スナップOFF（N）なら素通し
   const P = px();
   const cands = [0, getPlayhead()];
   for (const track of getTracks()) {
@@ -298,6 +299,8 @@ function snapTime(t, ignoreId) {
 // 吸着させ、より近い方のズレを採用する。→ カットしたクリップを隣にピタッとくっつけられる。
 let snapGuideTime = null;
 function snapMoveStart(newStart, duration, ignoreId) {
+  snapGuideTime = null;
+  if (!getSnap()) return newStart; // スナップOFF（N）なら素通し・ガイドも出さない
   const P = px();
   const cands = [0, getPlayhead()];
   for (const track of getTracks()) {

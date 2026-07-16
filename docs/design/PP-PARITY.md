@@ -35,25 +35,25 @@
   - 対象: packages/core/renderer/js/state.js, packages/core/renderer/js/app.js, packages/core/renderer/js/timeline.js
   - 検証: TCE_EVAL: I/O 押下相当の markIn/markOut 後に getRange() が期待値・ツールを select に戻しても range が残る。手動でバンド表示と Alt+X クリアを確認。npm run test:fast。
   - 競合: Cmd+I=素材読み込み（app.js:305）は修飾キー付きなので単独 I と非競合・両方維持。R の範囲ツールとは同じ range モデルを共有（後から操作した方が勝つ）。
-- [ ] PP004 [S] スナップのON/OFFトグル（Nキー＋磁石ボタン・永続化）
+- [x] PP004 [S] スナップのON/OFFトグル（Nキー＋磁石ボタン・永続化）
   - PP挙動: PP は S キーとタイムラインヘッダの磁石アイコンでスナップを随時切替。フレーム微調整の直前に切るのが常套操作。
   - 方針: state.ui.snap（既定 true）を追加し、localStorage 'clipai.snap' で永続化（proxy.js:5,25 の telora.proxy パターン踏襲）。snapTime（timeline.js:280）と snapMoveStart（timeline.js:300）の冒頭で無効時は素通し（snapGuideTime=null で吸着ガイドも消す）。ツールバーに磁石トグルボタン（btnGuides の active クラスパターン app.js:258-259 踏襲）、キーは N を割当。
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/state.js, packages/core/renderer/js/app.js, packages/core/renderer/index.html
   - 検証: 手動: N でドラッグ吸着とシアンのガイド線が消える/戻る・アプリ再起動後も状態保持。npm run test:fast。
   - 競合: PP標準の S はスナップだが、本アプリでは S=分割（app.js:316）で使用中。既存キー維持の原則により S は動かさず、N（Final Cut 流・未割当）に割当。ボタンのツールチップに「スナップ (N)」と明記して発見可能性を担保。
-- [ ] PP005 [S] タイムラインズームのキーボード操作（=/-/\）
+- [x] PP005 [S] タイムラインズームのキーボード操作（=/-/\）
   - PP挙動: PP は =/- でタイムラインズームイン/アウト、\ でシーケンス全体表示。ズームは毎分使う基本動作。
   - 方針: wireKeyboard の単独キー領域（app.js:319 のM の後・typing ガード済み位置）に '='/'+'→zoomIn、'-'→zoomOut、'\\'→zoomFit を追加。3関数は timeline.js:602-609 に実装済みで app.js:260-262 が import 済みのため配線のみ。ズーム後は ensurePlayheadVisible で再生ヘッドを見失わないようにする。
   - 対象: packages/core/renderer/js/app.js
   - 検証: 手動: =/-/\ で拡縮・全体フィット。テロップ本文入力中に '-' が文字として入ること（typing ガード）を確認。npm run test:fast。
   - 競合: 表示メニューの Cmd+Plus/Minus（Electron role のページズーム）とは修飾キー有無で区別され競合なし。ページズーム role は差し替えず併存（アクセシビリティ用途を維持）。
-- [ ] PP006 [S] Cmd+K 分割の追加（既存 Cmd+B / S は維持）
+- [x] PP006 [S] Cmd+K 分割の追加（既存 Cmd+B / S は維持）
   - PP挙動: PP の「編集点を追加」は Cmd+K。PP 併用ユーザーの指が最初に空振りするキー。
   - 方針: app.js:307 の Cmd+B 分岐直後に `mod && 'k'` → splitAtPlayhead を追加。typing 中の発火は既存 Cmd+B と同挙動に揃える（必要なら app.js:294 の typing 除外リスト検討は別途）。メニュー（main.js:122）は CmdOrCtrl+B のまま変更せず二重アクセラレータ登録を避け、ラベル末尾に「（Cmd+B / Cmd+K / S）」と付記して発見可能性を上げる。
   - 対象: packages/core/renderer/js/app.js, packages/core/main/main.js
   - 検証: 手動: Cmd+K で再生ヘッド位置分割・Cmd+B と S も従来通り。npm test（main プロセスのメニュー文言を触るため）。
   - 競合: Cmd+K は未割当で競合なし。既存3系統（Cmd+B・S・メニュー）は全て維持。
-- [ ] PP007 [S] Shift+矢印を5フレームへ（PP標準）・既存1秒ジャンプは Cmd+矢印へ移設
+- [x] PP007 [S] Shift+矢印を5フレームへ（PP標準）・既存1秒ジャンプは Cmd+矢印へ移設
   - PP挙動: PP は ←/→=1フレーム、Shift+←/→=5フレーム。細かいカット位置合わせの基本粒度。
   - 方針: app.js:322-323 を `e.shiftKey ? 5/fps : 1/fps` に変更。既存の1秒ジャンプ機能は廃止せず、mod ガード（app.js:310）より前に Cmd+←/→ 分岐を追加して移設（typing 中は除外）。トランスポートの ±1秒ボタン（app.js:229-230）はそのまま残るため導線も維持される。
   - 対象: packages/core/renderer/js/app.js
@@ -203,3 +203,4 @@
 - 2026-07-16 / PP001+PP002 / J·K·Lシャトル実装（L:1→2→4→8倍、J:-1→-2→-4倍、K:停止。4倍以下順方向はネイティブ再生・それ以外はシーク描画、レート表示ラベル追加、Space/シークでシャトル解除）/ TCE_EVAL実測: 2倍速=1.96秒/秒・K後増分0・逆再生-0.59秒/秒・レンダラエラー0、test:fast 30アサート全緑
 - 2026-07-16 / (ハーネス) / TCE_SMOKE・TCE_EVAL・TCE_CAPTURE を TCE_DEBUG なしの単独指定でも有効化（従来はTCE_DEBUG必須で、忘れると自動終了せずハングしていた）/ npm test 全緑
 - 2026-07-16 / PP003 / I/Oイン・アウト点（I=イン・O=アウト・Alt+X=クリア。片側のみ打つと反対端は0/全体尺で補完。既存rangeモデル共有でsource:'io'の範囲はツール切替でも消えず、範囲削除ボタンがそのまま効く。帯はルーラーまで伸びブラケット表示）/ TCE_EVAL実測: I@1s→[1,9]・O@7s→[1,7]・Escape後も保持・Alt+Xでクリア・エラー0、test:fast 30アサート全緑
+- 2026-07-16 / PP004+PP005+PP006+PP007 / スナップトグルN（磁石ボタン・localStorage永続化・OFF時はガイド線も抑制）／ズームキー =/-/\（\=全体フィット・ズーム後は再生ヘッド追従）／Cmd+K分割追加（Cmd+B・S維持、メニューに併記）／矢印粒度をPP標準化（Shift+←→=5コマ、旧1秒はCmd+←→へ移設） / TCE_EVAL実測: 1コマ0.03s・5コマ0.20s・Cmd1.00s・分割1→2・スナップON/OFF/永続化・ズーム80→64→80px+フィット、npm testフル全緑（同一ファイル交差のため4件を1コミットに統合）

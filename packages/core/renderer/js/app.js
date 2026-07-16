@@ -18,7 +18,7 @@ import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
   getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead, nextEditPoint,
-  markIn, markOut, clearRange,
+  markIn, markOut, clearRange, getSnap, toggleSnap,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -258,6 +258,8 @@ function wireTimelineToolbar() {
   $('btnMarker').onclick = () => { toggleMarkerAtPlayhead(); };
   $('btnGuides').onclick = () => { const on = toggleGuides(); $('btnGuides').classList.toggle('active', on); };
   $('btnGuides').classList.toggle('active', getGuides());
+  $('btnSnap').onclick = () => { $('btnSnap').classList.toggle('active', toggleSnap()); };
+  $('btnSnap').classList.toggle('active', getSnap());
   $('btnZoomIn').onclick = zoomIn;
   $('btnZoomOut').onclick = zoomOut;
   $('btnZoomFit').onclick = zoomFit;
@@ -306,8 +308,12 @@ function wireKeyboard() {
     if (mod && e.key.toLowerCase() === 'i') { e.preventDefault(); pickAndImport(); return; }
     if (mod && e.key.toLowerCase() === 't') { e.preventDefault(); addTelopAtPlayhead(); return; }
     if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); splitAtPlayhead(); return; }
+    if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); splitAtPlayhead(); return; } // Premiere Pro互換（編集点を追加）
 
     if (typing) return;
+    // Cmd+←/→ = 1秒ジャンプ（旧 Shift+矢印から移設。Shift+矢印はPP標準の5フレームへ）
+    if (mod && e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - 1); return; }
+    if (mod && e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + 1); return; }
     if (mod) return; // 単独キーのショートカットは修飾キー併用時は無効化
 
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
@@ -336,10 +342,23 @@ function wireKeyboard() {
     if (e.key.toLowerCase() === 'a') { e.preventDefault(); cutBefore(); return; }         // A: 前をカット
     if (e.key.toLowerCase() === 'd') { e.preventDefault(); cutAfter(); return; }          // D: 後ろをカット
     if (e.key.toLowerCase() === 'm') { e.preventDefault(); toggleMarkerAtPlayhead(); return; } // M: マーカー
+    // N: スナップ切替（PP標準のSは分割で使用中のためNに割当）
+    if (e.key.toLowerCase() === 'n') {
+      e.preventDefault();
+      const on = toggleSnap();
+      $('btnSnap').classList.toggle('active', on);
+      toast(on ? 'スナップ: オン' : 'スナップ: オフ');
+      return;
+    }
+    // タイムラインズーム（Premiere Pro互換）: =/+ ズームイン、- ズームアウト、\ 全体表示
+    if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomIn(); ensurePlayheadVisible(); return; }
+    if (e.key === '-') { e.preventDefault(); zoomOut(); ensurePlayheadVisible(); return; }
+    if (e.key === '\\') { e.preventDefault(); zoomFit(); return; }
 
     const fps = getProject().settings.fps || 30;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - (e.shiftKey ? 1 : 1 / fps)); return; }
-    if (e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + (e.shiftKey ? 1 : 1 / fps)); return; }
+    // ←/→=1フレーム、Shift+←/→=5フレーム（Premiere Pro標準。1秒ジャンプは Cmd+←/→ へ移設）
+    if (e.key === 'ArrowLeft') { e.preventDefault(); seek(getPlayhead() - (e.shiftKey ? 5 / fps : 1 / fps)); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + (e.shiftKey ? 5 / fps : 1 / fps)); return; }
     // ↓＝次のクリップ境界（前方）へ、↑＝前のクリップ境界（戻る）へジャンプ
     if (e.key === 'ArrowDown') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), +1); if (p != null) seek(p); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); const p = nextEditPoint(getPlayhead(), -1); if (p != null) seek(p); return; }

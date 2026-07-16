@@ -120,7 +120,7 @@ function buildMenu() {
       label: '編集',
       submenu: [
         { label: '再生 / 一時停止', accelerator: 'Space', click: send('menu-playpause') },
-        { label: 'クリップを分割', accelerator: 'CmdOrCtrl+B', click: send('menu-split') },
+        { label: `クリップを分割（${isMac ? 'Cmd' : 'Ctrl'}+K / S でも可）`, accelerator: 'CmdOrCtrl+B', click: send('menu-split') },
         { label: '再生位置より前をカット', click: send('menu-cut-before') },
         { label: '再生位置より後ろをカット', click: send('menu-cut-after') },
         { label: '選択を削除', accelerator: 'Delete', click: send('menu-delete') },
