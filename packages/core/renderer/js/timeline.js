@@ -374,6 +374,7 @@ function updateRangeBand() {
   const r = getRange();
   if (!r || r.end - r.start < 1e-6) { rangeBandEl.hidden = true; return; }
   rangeBandEl.hidden = false;
+  rangeBandEl.classList.toggle('io', r.source === 'io'); // I/O打点はルーラーまで帯を伸ばしブラケット表示
   rangeBandEl.style.left = (r.start * px()) + 'px';
   rangeBandEl.style.width = ((r.end - r.start) * px()) + 'px';
 }

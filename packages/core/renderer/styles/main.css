@@ -254,6 +254,11 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 
 .range-band { position: absolute; top: 26px; bottom: 0; background: rgba(91,140,255,.22); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); z-index: 5; pointer-events: none; }
 .range-band[hidden] { display: none; }
+/* I/O イン・アウト点: ルーラーまで帯を伸ばし、上端に内向きブラケットを描く */
+.range-band.io { top: 0; }
+.range-band.io::before, .range-band.io::after { content: ""; position: absolute; top: 0; width: 8px; height: 13px; background: var(--accent); }
+.range-band.io::before { left: -2px; border-radius: 0 0 5px 0; }
+.range-band.io::after { right: -2px; border-radius: 0 0 0 5px; }
 .timeline-scroll.range-mode { cursor: crosshair; }
 .tool-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 

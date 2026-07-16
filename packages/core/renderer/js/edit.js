@@ -292,7 +292,7 @@ function makeSub(c, t0, t1, newStart) {
 }
 export function deleteSelectedRange() {
   const r = getRange();
-  if (!r || (r.end - r.start) < 0.02) { toast('範囲を選択してください（範囲ツールでドラッグ）', 'err'); return; }
+  if (!r || (r.end - r.start) < 0.02) { toast('範囲を選択してください（Rの範囲ツールでドラッグ、または I／O でイン・アウト点）', 'err'); return; }
   const a = r.start, b = r.end, len = b - a;
   mutate((p) => {
     for (const track of p.tracks) {

@@ -186,11 +186,31 @@ export function isPlaying() { return state.ui.playing; }
 
 // ---- ツールモード / 範囲選択 ----
 export function getTool() { return state.ui.tool; }
-export function setTool(t) { state.ui.tool = t; if (t !== 'range') state.ui.range = null; emit('tool'); emit('range'); }
+// I/O（source:'io'）で打った範囲はツール切替では消さない（Premiere のイン・アウト点と同じ寿命）
+export function setTool(t) { state.ui.tool = t; if (t !== 'range' && (!state.ui.range || state.ui.range.source !== 'io')) state.ui.range = null; emit('tool'); emit('range'); }
 export function toggleRangeTool() { setTool(state.ui.tool === 'range' ? 'select' : 'range'); }
 export function getRange() { return state.ui.range; }
 export function setRange(r) { state.ui.range = r; emit('range'); }
 export function clearRange() { state.ui.range = null; emit('range'); }
+
+// ---- I/O イン・アウト点（Premiere Pro の I/O 相当）----
+// 範囲ツールと同じ ui.range を共有し、片側のみ指定時は反対端を 0／全体尺で補完する
+export function markIn() {
+  const t = state.ui.playhead;
+  const cur = state.ui.range;
+  const end = (cur && cur.end > t + 1e-6) ? cur.end : totalDuration();
+  if (end <= t + 1e-6) return; // 尺が無い・イン点が末尾
+  state.ui.range = { start: t, end, source: 'io' };
+  emit('range');
+}
+export function markOut() {
+  const t = state.ui.playhead;
+  const cur = state.ui.range;
+  const start = (cur && cur.start < t - 1e-6) ? cur.start : 0;
+  if (t <= start + 1e-6) return; // アウト点が先頭
+  state.ui.range = { start, end: t, source: 'io' };
+  emit('range');
+}
 
 // ---- トラック / クリップ計算 ----
 export function getTracks() { return state.project.tracks; }

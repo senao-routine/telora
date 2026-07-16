@@ -29,7 +29,7 @@
   - 対象: packages/core/renderer/js/preview.js, packages/core/renderer/js/app.js
   - 検証: 手動: J で再生ヘッドが逆走し映像が更新される・0秒で停止する。TCE_EVAL で playRate=-1 時に getPlayhead() が減少することを確認。npm run test:fast。
   - 競合: なし（J は未割当）。PP001 とは同ファイル同関数を触るため直列で実装する。
-- [ ] PP003 [M] I/Oイン・アウト点（再生ヘッドでマーク・ルーラー表示・Alt+Xクリア）
+- [x] PP003 [M] I/Oイン・アウト点（再生ヘッドでマーク・ルーラー表示・Alt+Xクリア）
   - PP挙動: I=イン点、O=アウト点を再生ヘッド位置に設定。シーケンス上部に範囲がハイライト表示され、Opt+X（PP）でクリア。設定した範囲は各種範囲操作の対象になる。
   - 方針: 既存の state.ui.range（setRange state.js:192）と rangeBandEl 表示（timeline.js:372-379）を流用し、state.js に markIn()/markOut() を追加（片側のみ設定時は反対端を 0/totalDuration に補完）。range に source:'io'|'tool' を持たせ、setTool（state.js:189）の「range 以外へ切替で range=null」副作用を source==='tool' のときだけに限定（I/O で打った範囲がツール切替で消えないように）。app.js に i / o / Alt+X を配線。ルーラーにイン/アウトのブラケット記号を描画。既存の btnDeleteRange（範囲リップル削除）がそのまま I/O 範囲にも効くようになる。
   - 対象: packages/core/renderer/js/state.js, packages/core/renderer/js/app.js, packages/core/renderer/js/timeline.js
@@ -202,3 +202,4 @@
 
 - 2026-07-16 / PP001+PP002 / J·K·Lシャトル実装（L:1→2→4→8倍、J:-1→-2→-4倍、K:停止。4倍以下順方向はネイティブ再生・それ以外はシーク描画、レート表示ラベル追加、Space/シークでシャトル解除）/ TCE_EVAL実測: 2倍速=1.96秒/秒・K後増分0・逆再生-0.59秒/秒・レンダラエラー0、test:fast 30アサート全緑
 - 2026-07-16 / (ハーネス) / TCE_SMOKE・TCE_EVAL・TCE_CAPTURE を TCE_DEBUG なしの単独指定でも有効化（従来はTCE_DEBUG必須で、忘れると自動終了せずハングしていた）/ npm test 全緑
+- 2026-07-16 / PP003 / I/Oイン・アウト点（I=イン・O=アウト・Alt+X=クリア。片側のみ打つと反対端は0/全体尺で補完。既存rangeモデル共有でsource:'io'の範囲はツール切替でも消えず、範囲削除ボタンがそのまま効く。帯はルーラーまで伸びブラケット表示）/ TCE_EVAL実測: I@1s→[1,9]・O@7s→[1,7]・Escape後も保持・Alt+Xでクリア・エラー0、test:fast 30アサート全緑

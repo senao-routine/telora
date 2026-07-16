@@ -18,6 +18,7 @@ import {
   on, emit, getUI, getProject, undo, redo, getPlayhead, setPlayhead, totalDuration,
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
   getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead, nextEditPoint,
+  markIn, markOut, clearRange,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -324,6 +325,10 @@ function wireKeyboard() {
       return;
     }
     if (e.key.toLowerCase() === 'k') { e.preventDefault(); pause(); return; }
+    // I/O イン・アウト点（Premiere Pro 互換）。Alt+X でクリア（Alt+英字は e.code で判定：macOS では key が記号になるため）
+    if (e.altKey && e.code === 'KeyX') { e.preventDefault(); clearRange(); return; }
+    if (!e.altKey && e.key.toLowerCase() === 'i') { e.preventDefault(); markIn(); return; }
+    if (!e.altKey && e.key.toLowerCase() === 'o') { e.preventDefault(); markOut(); return; }
     if (e.key.toLowerCase() === 'r') { e.preventDefault(); toggleRangeTool(); return; }   // 範囲選択モード切替
     if (e.key === 'Escape') { e.preventDefault(); setTool('select'); return; }              // 選択モードへ戻す
     if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteSelection(); return; } // Backspace: 削除
