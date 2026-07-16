@@ -302,6 +302,59 @@ function isTyping(e) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
 }
 
+// ショートカット一覧（? キー）。表示用カタログ — 実際の割当は wireKeyboard が正
+const SHORTCUTS = [
+  { cat: '再生', items: [
+    ['Space', '再生 / 一時停止'], ['Shift+Space', 'イン-アウト間だけ再生'],
+    ['J / K / L', 'シャトル（逆再生 / 停止 / 順再生・連打で倍速）'],
+    ['← / →', '1コマ移動'], ['Shift+← / →', '5コマ移動'], ['Cmd+← / →', '1秒移動'],
+    ['↑ / ↓', '前 / 次の編集点へ'], ['Home / End', '先頭 / 末尾へ'],
+  ] },
+  { cat: 'マーク', items: [
+    ['I / O', 'イン点 / アウト点'], ['Shift+I / O', 'イン / アウトへジャンプ'],
+    ['X', 'クリップをイン-アウトにマーク'], ['Alt+X', 'イン-アウトをクリア'], ['M', 'マーカー追加/削除'],
+  ] },
+  { cat: 'カット', items: [
+    ['S / Cmd+B / Cmd+K', '再生位置で分割'], ['Cmd+Shift+K', '全トラックで分割'],
+    ['Q / W', 'リップルトリム（前 / 後ろを詰めてカット）'],
+    ['A / D', '前 / 後ろをカット（トリムのみ）'],
+    ['Backspace', '削除（ギャップを残す）'], ['Shift+Delete', 'リップル削除（後続を詰める）'],
+  ] },
+  { cat: '選択・移動', items: [
+    ['Cmd+A', '全クリップ選択'], ['Shift+クリック / マーキー', '選択に追加'],
+    ['Alt+← / →', '選択クリップをナッジ（Shiftで5コマ）'], ['Alt+ドラッグ', '複製'],
+    ['R', '範囲選択ツール'], ['Esc', '選択ツールに戻る'],
+  ] },
+  { cat: '表示・タイムライン', items: [
+    ['= / -', 'ズームイン / アウト'], ['\\', '全体を表示'], ['N', 'スナップ切替'],
+    ['時間表示をダブルクリック', 'タイムコード入力でジャンプ'], ['?', 'この一覧を表示'],
+  ] },
+  { cat: 'ファイル・編集', items: [
+    ['Cmd+S / O / I / E', '保存 / 開く / 素材読み込み / 書き出し'],
+    ['Cmd+T', 'テロップ追加'], ['Cmd+Z / Shift+Cmd+Z', '元に戻す / やり直す'],
+    ['Cmd+C / V / X / D', 'コピー / 貼り付け / 切り取り / 複製'],
+  ] },
+];
+function toggleKbdOverlay(force) {
+  const ov = $('kbdOverlay');
+  if (!ov) return;
+  const show = force != null ? force : ov.hidden;
+  if (show && !ov.dataset.built) {
+    const cols = $('kbdCols');
+    for (const g of SHORTCUTS) {
+      const col = document.createElement('div');
+      col.className = 'kbd-group';
+      col.innerHTML = `<div class="kbd-cat">${g.cat}</div>` + g.items
+        .map(([k, d]) => `<div class="kbd-row"><span class="kbd-keys">${k}</span><span class="kbd-desc">${d}</span></div>`)
+        .join('');
+      cols.appendChild(col);
+    }
+    ov.addEventListener('pointerdown', (e) => { if (e.target === ov) toggleKbdOverlay(false); });
+    ov.dataset.built = '1';
+  }
+  ov.hidden = !show;
+}
+
 // タイムコード直接入力：時間表示をダブルクリック → 数値入力 → Enter でジャンプ
 function parseTimecode(str) {
   const s = String(str || '').trim().replace(/[：]/g, ':');
@@ -368,6 +421,9 @@ function wireKeyboard() {
     if (mod && e.key === 'ArrowRight') { e.preventDefault(); seek(getPlayhead() + 1); return; }
     if (mod) return; // 単独キーのショートカットは修飾キー併用時は無効化
 
+    // ?: ショートカット一覧の表示切替（表示中は Esc でも閉じる）
+    if (e.key === '?') { e.preventDefault(); toggleKbdOverlay(); return; }
+    if (e.key === 'Escape' && !$('kbdOverlay').hidden) { e.preventDefault(); toggleKbdOverlay(false); return; }
     // Shift+Space: イン-アウト間だけ再生（末尾で自動停止）
     if (e.code === 'Space' && e.shiftKey) {
       e.preventDefault();

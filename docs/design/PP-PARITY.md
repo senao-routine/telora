@@ -161,7 +161,7 @@
   - 対象: packages/core/renderer/js/context-menu.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/media.js
   - 検証: 手動: 右クリック→矢印キーで選択→Enter 実行・Escape で閉じる・shortcut 表記の描画確認。npm run test:fast。
   - 競合: なし（部品の後方互換を維持するため既存呼び出しはそのまま動く）。
-- [ ] PP024 [M] ショートカット一覧オーバーレイ（?キー）とキーマップの一元テーブル化
+- [x] PP024 [M] ショートカット一覧オーバーレイ（?キー）とキーマップの一元テーブル化
   - PP挙動: PP はキーボードショートカットの一覧・検索画面を持つ。習得コストを下げ、PP互換キーの発見可能性を担保する。
   - 方針: app.js の wireKeyboard に散在する割当を KEYMAP テーブル（key/modifier/説明/ハンドラ）に一元化し、if 連鎖をテーブル駆動に置換（評価順序は配列順で従来を保存）。'?'（Shift+/）で半透明オーバーレイに一覧をカテゴリ表示（Esc/再押下で閉じる）。このテーブルが将来の「ClipAI標準/PP互換」プリセット切替の足場になる。
   - 対象: packages/core/renderer/js/app.js, packages/core/renderer/index.html
@@ -179,7 +179,7 @@
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/state.js, packages/core/renderer/index.html, packages/core/renderer/styles
   - 検証: 手動: 3段階切替で行高・縦ドラッグのトラック判定・マーキー選択が全て追従する。再起動後も保持。npm run test:fast。
   - 競合: trackRowAtY が高さ定数に依存しているため、置換漏れがあると縦ドラッグの行判定だけズレる（参照箇所の grep 網羅を verify に含める）。
-- [ ] PP027 [M] イン-アウト範囲のみ書き出し（ワークエリア書き出し）
+- [x] PP027 [M] イン-アウト範囲のみ書き出し（ワークエリア書き出し）
   - PP挙動: PP はイン-アウトを打った範囲だけを書き出せる（長尺から一部だけ納品する定番フロー）。
   - 方針: 書き出し設定ポップオーバー（wireTopbar app.js:116-163）に「イン-アウト間のみ書き出す」チェックを追加（getRange() が有効な時だけ活性）。第一段は低リスクの後段トリム方式: 通常書き出し完了後に FFmpeg の -ss/-t でコピートリム（再エンコードなし・数秒）して範囲外を落とす。合成時間軸自体を [a,b] に平行移動する本格版は効果測定後に別タスク化。
   - 対象: packages/core/renderer/js/app.js, packages/core/renderer/js/state.js
@@ -198,6 +198,13 @@
   - 検証: 手動: BGM トラックと本編音声でソロ切替→対象のみ可聴・解除で全復帰・書き出し結果は不変。npm run test:fast。
   - 競合: トラックミュート（toggleTrackMute state.js:451-459）との優先順位（ソロ > ミュート）を preview 側の1関数に集約して二重条件の分散を防ぐ。
 
+- [ ] PP030 [M] wireKeyboard の KEYMAP テーブル駆動化（プリセット切替の足場）
+  - PP挙動: PP はキーボードレイアウトのプリセット切替を持つ。将来の「ClipAI標準 / PP互換」切替の基盤。
+  - 方針: PP024 で作った表示用カタログ SHORTCUTS とは別に、wireKeyboard の if 連鎖を match/run のテーブル駆動に置換（評価順序は配列順で完全保存）。挙動不変のリファクタのため、既存の TCE_EVAL 一式（jkl/io/batch2〜7/overlay）を全部通すことを完了条件とする。
+  - 対象: packages/core/renderer/js/app.js
+  - 検証: 過去の全 eval スクリプト再実行＋npm run test:fast。
+  - 競合: なし（純リファクタ）。
+
 ## 進捗ログ（追記式）
 
 - 2026-07-16 / PP001+PP002 / J·K·Lシャトル実装（L:1→2→4→8倍、J:-1→-2→-4倍、K:停止。4倍以下順方向はネイティブ再生・それ以外はシーク描画、レート表示ラベル追加、Space/シークでシャトル解除）/ TCE_EVAL実測: 2倍速=1.96秒/秒・K後増分0・逆再生-0.59秒/秒・レンダラエラー0、test:fast 30アサート全緑
@@ -210,3 +217,4 @@
 - 2026-07-16 / PP018+PP019+PP020 / タイムコード直接入力（時間表示をダブルクリック→ 90 / 1:30 / 0:15.5 形式でジャンプ・不正入力は拒否・Enter/Escape/blurで閉じる）／Cmd+Shift+K 全トラック一括分割（ロック中トラック除外・mutate1回=undo1段・メニューにも追加）／編集メニュー整備（undo/redo・コピー/貼り付け/複製・リップル削除・全トラック分割をラベルのキー表記付きで追加、表示メニューにタイムラインズーム3項目。accelerator は付けず renderer の typing ガードに一本化＝PP010方針の踏襲） / TCE_EVAL実測: 一括分割2→4・undo1回で2・タイムコード2.5sジャンプ・不正入力無視、blur二重removeバグを検証で捕捉し修正、npm testフル全緑
 - 2026-07-16 / PP021 / 複数選択クリップのグループ縦移動（primaryの行差分を原点行基準で全員に適用・1つでも移動先が無い/非互換なら全員据え置き=PPの全員一致ルール・グループでは新規トラック自動生成なし・ロック行はtrackCompatibleで自動除外） / TCE_EVAL実測: 2クリップが[2,0,0,0]→[0,2,0,0]へ一括移動・Cmd+Z一発で復元・エラー0、test:fast全緑 ※これでP1完了（21/29）
 - 2026-07-17 / PP022+PP028+PP029 / 動画クリップの音量調整（インスペクタのスライダーを video にも表示・プレビューはベース動画含め volume×フェード反映・書き出しも expandClipForExport に volume を追加してベース動画音声まで反映）／moveClip コマンドに GUI と同じ resolveOverwrite を追加（GUI/MCP/AIチャット3経路の上書き意味論を統一・tests に重複なし回帰を追加・02-local-mcp.md に仕様追記）／オーディオソロ S ボタン（全トラック・ソロ＞ミュートの可聴判定 trackAudible をpreviewに集約・プレビュー専用） / 検証: ソロボタン4つ・トグルon/off・エラー0、npm test フル36アサート全緑（実FFmpeg書き出し互換確認込み）
+- 2026-07-17 / PP024+PP027 / ショートカット一覧オーバーレイ（?キーで開閉・Escでも閉じる・6カテゴリ34行のカタログ表示・背景クリックで閉じる・トランスポートのヒント行にも案内追加）。if連鎖のテーブル駆動化は回帰リスク対効果からPP030として分離／イン-アウト範囲書き出しは既実装（renderer getRange()→FFmpeg trim/atrim）を確認し、I/O打点がそのまま効くことと確認ダイアログの文言をイン-アウト用語に改善 / TCE_EVAL実測: overlay 6グループ34行・?/Esc/再押下で開閉・エラー0、test:fast全緑

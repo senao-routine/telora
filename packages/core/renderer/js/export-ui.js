@@ -179,7 +179,7 @@ export async function runExport() {
   const r = getRange();
   if (r && (r.end - r.start) > 0.1) {
     range = { start: r.start, end: r.end };
-    if (!confirm(`選択範囲 ${(r.end - r.start).toFixed(1)}秒 のみを書き出します。\n（キャンセルすると全体を書き出します）`)) range = null;
+    if (!confirm(`イン-アウト範囲 ${(r.end - r.start).toFixed(1)}秒 のみを書き出します。\n（I／O または Rの範囲ツールで指定した区間。キャンセルすると全体を書き出します）`)) range = null;
   }
 
   const baseName = (project.name && project.name !== '無題のプロジェクト' ? project.name : 'export');
