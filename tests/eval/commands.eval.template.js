@@ -91,6 +91,29 @@ async () => {
     const moved = (await allClips()).find((c) => c.id === target.id);
     A('moveClip 反映', moved && Math.abs(moved.start - 10) < 0.001, JSON.stringify(moved));
     await run('moveClip', { clipId: target.id, start: target.start }); // 戻す
+
+    // PP028回帰: 同トラック内で重ねて移動 → GUI と同じ上書き解決で重複区間が残らない
+    const ta = await run('addTelop', { text: '上書きA', start: 20, end: 22 });
+    const tb = await run('addTelop', { text: '上書きB', start: 22, end: 24 });
+    A('moveClip 上書き前提: telop 2つ', ta.ok && tb.ok, JSON.stringify([ta.error, tb.error]));
+    if (ta.ok && tb.ok) {
+      const mv2 = await run('moveClip', { clipId: tb.result.clipId, start: 21 });
+      A('moveClip 重なり移動 ok', mv2.ok, JSON.stringify(mv2));
+      const tl = await timeline();
+      let overlap = false;
+      for (const tr of tl.tracks) {
+        const cs = [...tr.clips].sort((a, b) => a.start - b.start);
+        for (let i = 1; i < cs.length; i++) {
+          if (cs[i].start < cs[i - 1].start + cs[i - 1].dur - 1e-3) overlap = true;
+        }
+      }
+      A('moveClip 上書き解決で同トラックに重複なし', !overlap, JSON.stringify(tl.tracks.map((t) => t.clips.map((c) => [c.start, c.dur]))));
+      // 後片付け（上書き解決でidが変わる可能性があるため位置で回収）
+      const tl2 = await timeline();
+      for (const tr of tl2.tracks) {
+        for (const c of tr.clips) { if (c.start >= 19.9) await run('deleteClip', { clipId: c.id }); }
+      }
+    }
   });
 
   await sec('8) addTelop / getTranscript / setTelop', async () => {

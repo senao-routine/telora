@@ -66,6 +66,7 @@ export function expandClipForExport(clip, m, W, H, kind) {
       opacity: rectTf.opacity != null ? rectTf.opacity : 1, rotation: rectTf.rotation || 0,
       crop: rectTf.crop || null, chroma: rectTf.chroma || null, speed: sp,
       fadeIn: fIn || 0, fadeOut: fOut || 0,
+      volume: clip.volume != null ? clip.volume : 1, // クリップ音量（ベース動画の書き出し音声にも反映）
     };
   };
   if (!hasKeyframes(clip)) {

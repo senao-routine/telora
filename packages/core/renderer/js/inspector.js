@@ -106,8 +106,8 @@ function renderMediaInspector(clip, track) {
     body.appendChild(rangeField('再生速度', 0.25, 4, 0.05, clip.speed, (v) => { clip.speed = Math.max(0.1, v); live(clip); emit('project'); }, (v) => v.toFixed(2) + '×', 'speed'));
   }
 
-  // 音量（音声のみ）
-  if (clip.kind === 'audio') {
+  // 音量（音声・動画クリップ。PPのクリップゲイン相当）
+  if (clip.kind === 'audio' || clip.kind === 'video') {
     if (clip.volume == null) clip.volume = 1;
     body.appendChild(el('div', { class: 'inspector-section-title', text: '音量' }));
     body.appendChild(rangeField('ボリューム', 0, 2, 0.05, clip.volume, (v) => { clip.volume = v; live(clip); }, pct, 'volume'));

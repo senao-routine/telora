@@ -101,7 +101,7 @@ window.api.onMcpInvoke(async ({ id, name, args }) => {
 | `split_clip` | `{time}` | `splitAt` | `setPlayhead`+`splitAtPlayhead` |
 | `cut_before` / `cut_after` | `{time}` | `cutBefore/cutAfter` | 同名 |
 | `delete_clip` | `{clipId}` | `deleteClip` | `deleteSelection` |
-| `move_clip` | `{clipId,start,trackId?}` | `moveClip` | 新規（mutate薄ラッパ） |
+| `move_clip` | `{clipId,start,trackId?}` | `moveClip` | 新規（mutate薄ラッパ）。移動先で他クリップと重なる場合は GUI ドラッグと同じ上書き解決が走る（移動クリップが勝ち、重複区間は削られる。2026-07-17〜） |
 | `add_telop` | `{text,start,end,style?}` | `addTelop` | `defaultTextClip`+mutate |
 | `set_telop` | `{clipId,text?,style?}` | `setTelop` | mutate |
 | `cut_silence` | `{clipId,noiseDb?,minDur?}` | `cutSilence` | `silenceCut` |

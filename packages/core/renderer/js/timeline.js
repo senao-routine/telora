@@ -4,7 +4,7 @@ import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
   getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, setMultiSelection, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack, toggleTrackMute,
-  getTool, getRange, setRange, getMarkers, getSnap, toggleTrackLock, toggleTrackHidden,
+  getTool, getRange, setRange, getMarkers, getSnap, toggleTrackLock, toggleTrackHidden, toggleTrackSolo,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
@@ -149,6 +149,12 @@ function renderHeaders() {
       onClick: (e) => { e.stopPropagation(); const on = toggleTrackMute(track.id); muteBtn.classList.toggle('muted', on); muteBtn.textContent = on ? '🔇' : '🔊'; },
     }, [track.muted ? '🔇' : '🔊']);
     children.push(muteBtn);
+    // ソロ（プレビュー専用・ミュートより優先）
+    children.push(el('button', {
+      class: 'th-solo' + (track.solo ? ' on' : ''),
+      title: track.solo ? 'ソロ中（クリックで解除）' : 'このトラックだけ聴く（ソロ・プレビューのみ）',
+      onClick: (e) => { e.stopPropagation(); toggleTrackSolo(track.id); },
+    }, ['S']));
     // 表示ON/OFF（映像トラックのみ・ベースは常時表示）。プレビューと書き出し両方に効く
     if (track.kind === 'visual' && !track.base) {
       children.push(el('button', {

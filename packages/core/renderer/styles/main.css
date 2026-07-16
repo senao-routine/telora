@@ -470,6 +470,10 @@ input[type=color] { width: 100%; height: 32px; background: var(--bg-2); border: 
 .ctx-item.disabled { opacity: .45; cursor: default; }
 .ctx-item.disabled:hover { background: none; }
 
+.th-solo { background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--text-mute); cursor: pointer; font-size: 10px; font-weight: 800; width: 18px; height: 18px; line-height: 1; padding: 0; }
+.th-solo:hover { color: var(--text); border-color: var(--line-strong); }
+.th-solo.on { background: var(--telop, #e0ab44); background: #e0ab44; color: #14120a; border-color: #e0ab44; }
+
 /* トラックのロック（🔒）と表示OFF（👁） */
 .th-lock, .th-eye { background: none; border: none; cursor: pointer; font-size: 12px; padding: 2px 3px; opacity: .5; }
 .th-lock:hover, .th-eye:hover { opacity: 1; }

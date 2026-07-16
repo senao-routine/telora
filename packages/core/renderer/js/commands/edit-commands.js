@@ -11,7 +11,7 @@ import {
   setSelection, getSelection, findClip, getTextClips, defaultTextClip, mutate, undo, redo,
   toggleTrackMute, clipEnd, clipDur, mediaById, slotFree,
 } from '../state.js';
-import { splitAtPlayhead, cutBefore as editCutBefore, cutAfter as editCutAfter, deleteSelection, applyCrossfade } from '../edit.js';
+import { splitAtPlayhead, cutBefore as editCutBefore, cutAfter as editCutAfter, deleteSelection, applyCrossfade, resolveOverwrite } from '../edit.js';
 import { silenceCut, fillerCut } from '../cut-tools.js';
 import { importMedia, addClipFromMedia } from '../media.js';
 import { buildExportPayload } from '../export-ui.js';
@@ -101,6 +101,7 @@ function moveClip({ clipId, start, trackId }) {
     clip.start = ns;
     if (clip.kind === 'text') clip.end = ns + textDur;
     target.clips.sort((a, b) => a.start - b.start);
+    resolveOverwrite(target, [clipId]); // GUIドラッグ（onUp）と同じ上書き解決＝GUI/MCP/AIチャット3経路の意味論を統一
   });
   return { clipId, start: r3(ns), trackId: trackId || f.track.id };
 }

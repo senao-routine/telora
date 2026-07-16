@@ -133,9 +133,10 @@ function syncBaseVideo(t, shouldPlay) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
     } else { pendingSeek = true; }
-    // ベース層がミュートなら映像のみ（音声を止める）。それ以外はフェードに追従。
-    const baseMuted = !!(base.track && base.track.muted);
-    try { video.muted = baseMuted; video.volume = baseMuted ? 0 : clipFadeAlpha(base.clip, t); } catch (_) {}
+    // ベース層が不可聴（ミュート/他トラックのソロ）なら映像のみ。それ以外はクリップ音量×フェードに追従。
+    const baseMuted = !trackAudible(base.track);
+    const baseVol = clamp((base.clip.volume != null ? base.clip.volume : 1) * clipFadeAlpha(base.clip, t), 0, 1);
+    try { video.muted = baseMuted; video.volume = baseMuted ? 0 : baseVol; } catch (_) {}
     if (shouldPlay) { if (video.paused) safePlay(); } else if (!video.paused) video.pause();
   } else {
     if (!video.paused) video.pause();
@@ -151,7 +152,7 @@ function safePlay() {
 function syncAudioClips(t, shouldPlay) {
   const activeIds = new Set();
   for (const track of getProject().tracks) {
-    if (track.kind !== 'audio' || track.muted) continue;
+    if (track.kind !== 'audio' || !trackAudible(track)) continue;
     for (const c of track.clips) {
       if (!shouldPlay) continue;
       if (t < c.start - 1e-6 || t >= clipEnd(c) - 1e-6) continue;
@@ -170,6 +171,14 @@ function syncAudioClips(t, shouldPlay) {
   for (const [id, a] of audioEls) { if (!activeIds.has(id) && !a.paused) a.pause(); }
 }
 function stopAllAudio() { for (const [, a] of audioEls) { if (!a.paused) a.pause(); } }
+
+// ソロ優先の可聴判定（プレビュー専用）: 1つでもソロが立っていればソロのトラックだけ鳴らす
+function trackAudible(track) {
+  if (!track) return true;
+  const anySolo = getProject().tracks.some((tr) => tr.solo);
+  if (anySolo) return !!track.solo;
+  return !track.muted;
+}
 
 // 非ベース動画トラック用の <video> 要素（デコーダ）。表示はキャンバス合成で行う。
 function getTrackVideoEl(trackId) {
@@ -196,8 +205,8 @@ function syncVideoTracks(t, shouldPlay) {
       const m = mediaById(c.mediaId);
       const vsrc = m ? fileUrl(previewPath(m)) : '';
       if (m && el._srcUrl !== vsrc) { el._srcUrl = vsrc; el._mediaId = m.id; el._pending = true; el.src = vsrc; el.load(); }
-      // トラックミュート時は動画側の音声も無音
-      const elMuted = !!track.muted;
+      // トラックが不可聴（ミュート/他トラックのソロ）なら動画側の音声も無音
+      const elMuted = !trackAudible(track);
       try { el.muted = elMuted; } catch (_) {}
       el.volume = elMuted ? 0 : clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
       const sp = clipSpeed(c); try { el.playbackRate = sp * effRate(); } catch (_) {}

@@ -485,6 +485,17 @@ export function removeTrack(id) {
 }
 
 // トラックの音声ミュート切替（映像だけ流す）。返り値は新しい muted 状態。
+// オーディオソロ（S）: 1つでもソロが立っていればソロのトラックだけ可聴（プレビュー専用・ミュートより優先）
+export function toggleTrackSolo(id) {
+  const tr = state.project.tracks.find((t) => t.id === id);
+  if (!tr) return false;
+  pushHistory();
+  tr.solo = !tr.solo;
+  markDirty();
+  emit('project');
+  return !!tr.solo;
+}
+
 // トラックロック（🔒）: ロック中はドラッグ・トリム・選択・配置・リップルの対象外
 export function toggleTrackLock(id) {
   const tr = state.project.tracks.find((t) => t.id === id);

@@ -149,7 +149,7 @@
 
 ## P2
 
-- [ ] PP022 [M] 動画クリップの音量調整（インスペクタ＋プレビュー反映）
+- [x] PP022 [M] 動画クリップの音量調整（インスペクタ＋プレビュー反映）
   - PP挙動: PP はクリップ単位のオーディオゲインを動画クリップにも適用できる。BGM と被る本編音声を下げる毎日の操作。
   - 方針: inspector.js:110 の音量スライダー表示条件を kind==='audio' から ['audio','video'] に緩和（clip.volume フィールドは splitAtPlayhead edit.js:81 が既に引き継いでおりモデル互換）。プレビュー: syncBaseVideo のフェード追従音量（監査 L134-137）と syncVideoTracks の音量計算に (clip.volume ?? 1) を乗算。書き出しの FFmpeg 音声フィルタへの反映は別タスクに切り出し可能とし、未反映の間はスライダー横に「書き出しには未反映」と明示。
   - 対象: packages/core/renderer/js/inspector.js, packages/core/renderer/js/preview.js
@@ -185,13 +185,13 @@
   - 対象: packages/core/renderer/js/app.js, packages/core/renderer/js/state.js
   - 検証: npm test（実FFmpeg書き出しを含むフル）＋手動: I/O を打って書き出し→出力尺が範囲長と一致（±1フレーム）。
   - 競合: FFmpeg系の重い改修を避ける制約に配慮し「後段コピートリム」方式を採用（書き出しパイプライン本体は不変更）。
-- [ ] PP028 [S] moveClip コマンドの上書き解決を GUI と統一（MCP/AI経路の重複クリップ防止）
+- [x] PP028 [S] moveClip コマンドの上書き解決を GUI と統一（MCP/AI経路の重複クリップ防止）
   - PP挙動: PP では移動手段によらず上書き編集の意味論は一貫している。ClipAI では AI/MCP 経由の moveClip だけ重なりが残る非一貫がある。
   - 方針: edit-commands.js の moveClip（edit-commands.js:81-106）末尾に、GUI ドラッグの onUp（timeline.js:535）と同じ track.clips.sort → resolveOverwrite(track,[id]) を追加。3経路（GUI/MCP/AIチャット）の意味論が揃う。HANDLERS のシグネチャ・戻り値形式（{ok,result}）は不変更なので API 互換は保たれる。
   - 対象: packages/core/renderer/js/commands/edit-commands.js, tests/run-commands.js
   - 検証: tests/run-commands.js に「moveClip で既存クリップに重ねる→重複区間が上書き解決される」回帰を追加。npm run test:fast（コマンド回帰込み）。
   - 競合: preload API は不変更（renderer 内のコマンド実装のみ）。MCP クライアントから見ると挙動が「重なったまま」→「上書き」に変わるため、docs の MCP コマンド仕様に1行追記。
-- [ ] PP029 [S] オーディオソロ（Sボタン・プレビュー専用）
+- [x] PP029 [S] オーディオソロ（Sボタン・プレビュー専用）
   - PP挙動: PP はトラックのソロボタンで特定トラックだけを聴ける（BGM を消して声だけ確認する等）。
   - 方針: track.solo を追加し、トラックヘッダのミュートボタン隣に「S」トグル（audio トラックとベース visual トラックに表示）。syncAudioClips（監査 L149-169）と syncBaseVideo の可聴判定を「solo が1つでも立っていれば solo トラックのみ可聴」に変更（ミュートより優先）。書き出しには影響しないプレビュー専用と明記。
   - 対象: packages/core/renderer/js/state.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/preview.js
@@ -209,3 +209,4 @@
 - 2026-07-16 / PP014+PP015+PP016+PP017 / マーカーをスナップ候補に追加＋リップル時に追従（範囲内は削除・後方はシフト）／Shift+マーキー追加選択＋Cmd+A全クリップ選択（テキスト編集中はOSに委譲）／トラックロック🔒（ドラッグ・トリム・選択・マーキー・Cmd+A・配置・リップル・ドロップの対象外／PPと同じくロック層はリップルで動かない）／映像トラック表示OFF👁（プレビュー合成と書き出しの両方から除外・ベースは不可） / TCE_EVAL実測: マーカー320→80px追従・Cmd+A=2・ロック中選択0＋Q無効・👁クラストグル、test:fast全緑
 - 2026-07-16 / PP018+PP019+PP020 / タイムコード直接入力（時間表示をダブルクリック→ 90 / 1:30 / 0:15.5 形式でジャンプ・不正入力は拒否・Enter/Escape/blurで閉じる）／Cmd+Shift+K 全トラック一括分割（ロック中トラック除外・mutate1回=undo1段・メニューにも追加）／編集メニュー整備（undo/redo・コピー/貼り付け/複製・リップル削除・全トラック分割をラベルのキー表記付きで追加、表示メニューにタイムラインズーム3項目。accelerator は付けず renderer の typing ガードに一本化＝PP010方針の踏襲） / TCE_EVAL実測: 一括分割2→4・undo1回で2・タイムコード2.5sジャンプ・不正入力無視、blur二重removeバグを検証で捕捉し修正、npm testフル全緑
 - 2026-07-16 / PP021 / 複数選択クリップのグループ縦移動（primaryの行差分を原点行基準で全員に適用・1つでも移動先が無い/非互換なら全員据え置き=PPの全員一致ルール・グループでは新規トラック自動生成なし・ロック行はtrackCompatibleで自動除外） / TCE_EVAL実測: 2クリップが[2,0,0,0]→[0,2,0,0]へ一括移動・Cmd+Z一発で復元・エラー0、test:fast全緑 ※これでP1完了（21/29）
+- 2026-07-17 / PP022+PP028+PP029 / 動画クリップの音量調整（インスペクタのスライダーを video にも表示・プレビューはベース動画含め volume×フェード反映・書き出しも expandClipForExport に volume を追加してベース動画音声まで反映）／moveClip コマンドに GUI と同じ resolveOverwrite を追加（GUI/MCP/AIチャット3経路の上書き意味論を統一・tests に重複なし回帰を追加・02-local-mcp.md に仕様追記）／オーディオソロ S ボタン（全トラック・ソロ＞ミュートの可聴判定 trackAudible をpreviewに集約・プレビュー専用） / 検証: ソロボタン4つ・トグルon/off・エラー0、npm test フル36アサート全緑（実FFmpeg書き出し互換確認込み）
