@@ -155,7 +155,7 @@
   - 対象: packages/core/renderer/js/inspector.js, packages/core/renderer/js/preview.js
   - 検証: 手動: 動画クリップ選択→音量 50%→プレビュー音量が下がる・undo で戻る。syncFields（inspector.js:383-410）への refKey 追記漏れがないかスクラブ追従を確認。npm run test:fast。
   - 競合: なし。トラックミュート（toggleTrackMute）とは乗算関係で共存。
-- [ ] PP023 [M] コンテキストメニュー強化（ショートカット表記・disabled・矢印キー操作）
+- [x] PP023 [M] コンテキストメニュー強化（ショートカット表記・disabled・矢印キー操作）
   - PP挙動: PP の右クリックメニューは各項目にショートカットが併記され、実行不能な項目はグレーアウト、キーボードでも選べる。
   - 方針: context-menu.js の item 形式に {shortcut, disabled} を追加（右端に薄色でキー表記・disabled は click 無効＋減色）、onKey（context-menu.js:14）を拡張して ArrowUp/Down で項目ハイライト・Enter で実行。呼び出し元 clipContextItems（timeline.js:237-258）と media.js:297-305 に shortcut 文字列（'S'・'Shift+Del' 等）を付記。部品と全呼び出し元の同時改修になるため、item 形式は後方互換（新キーは省略可）に保つ。
   - 対象: packages/core/renderer/js/context-menu.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/media.js
@@ -173,7 +173,7 @@
   - 対象: packages/core/renderer/js/preview.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/app.js
   - 検証: 手動: 設定ON→ルーラードラッグで断続的に音が鳴る・OFF で無音・ドラッグ終了後に再生状態が汚れない（isPlaying false のまま）。npm run test:fast。
   - 競合: syncBaseVideo のドリフト補正（許容 0.04/0.12s）と play/pause が競合し得るため、マイクロ再生中は同期チェックをスキップするフラグを立てる。
-- [ ] PP026 [M] トラック高さの3段階切替（S/M/L・波形とサムネの視認性向上）
+- [x] PP026 [M] トラック高さの3段階切替（S/M/L・波形とサムネの視認性向上）
   - PP挙動: PP はトラック高さを自由に変えられ、波形を拡大して無音や息継ぎを目視できる。
   - 方針: TRACK_H 固定値（timeline.js:20 visual:64/audio:54）を state.ui.trackScale（'s'|'m'|'l'、localStorage 'clipai.trackScale'）から算出する trackH(kind) 関数に置換。参照箇所（行描画・trackRowAtY timeline.js:551-560・マーキー判定）を関数経由に統一。ツールバーに高さ切替ボタン。CSS の行高も CSS 変数化して同期。
   - 対象: packages/core/renderer/js/timeline.js, packages/core/renderer/js/state.js, packages/core/renderer/index.html, packages/core/renderer/styles
@@ -218,3 +218,4 @@
 - 2026-07-16 / PP021 / 複数選択クリップのグループ縦移動（primaryの行差分を原点行基準で全員に適用・1つでも移動先が無い/非互換なら全員据え置き=PPの全員一致ルール・グループでは新規トラック自動生成なし・ロック行はtrackCompatibleで自動除外） / TCE_EVAL実測: 2クリップが[2,0,0,0]→[0,2,0,0]へ一括移動・Cmd+Z一発で復元・エラー0、test:fast全緑 ※これでP1完了（21/29）
 - 2026-07-17 / PP022+PP028+PP029 / 動画クリップの音量調整（インスペクタのスライダーを video にも表示・プレビューはベース動画含め volume×フェード反映・書き出しも expandClipForExport に volume を追加してベース動画音声まで反映）／moveClip コマンドに GUI と同じ resolveOverwrite を追加（GUI/MCP/AIチャット3経路の上書き意味論を統一・tests に重複なし回帰を追加・02-local-mcp.md に仕様追記）／オーディオソロ S ボタン（全トラック・ソロ＞ミュートの可聴判定 trackAudible をpreviewに集約・プレビュー専用） / 検証: ソロボタン4つ・トグルon/off・エラー0、npm test フル36アサート全緑（実FFmpeg書き出し互換確認込み）
 - 2026-07-17 / PP024+PP027 / ショートカット一覧オーバーレイ（?キーで開閉・Escでも閉じる・6カテゴリ34行のカタログ表示・背景クリックで閉じる・トランスポートのヒント行にも案内追加）。if連鎖のテーブル駆動化は回帰リスク対効果からPP030として分離／イン-アウト範囲書き出しは既実装（renderer getRange()→FFmpeg trim/atrim）を確認し、I/O打点がそのまま効くことと確認ダイアログの文言をイン-アウト用語に改善 / TCE_EVAL実測: overlay 6グループ34行・?/Esc/再押下で開閉・エラー0、test:fast全緑
+- 2026-07-17 / PP023+PP026 / コンテキストメニュー強化（ショートカット右端表記・↑↓で項目ハイライト・Enter実行・Escで閉じる・メニュー表示中の矢印キーはタイムラインへ漏れない・disabled対応は実装済みを流用）／トラック高さ3段階切替（ツールバー「高さ:小/中/大」ボタン・44/64/96px・localStorage永続化・クリップはtop/bottom固定で自動追従・trackRowAtYはrect実測のため縦ドラッグ判定も自動追従） / TCE_EVAL実測: ctx-key6件・フォーカス移動・arrowLeak=false・Enter実行・高さ64→96→44→64、test:fast全緑

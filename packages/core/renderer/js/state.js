@@ -200,6 +200,18 @@ export function selectAllClips() {
   setMultiSelection(ids);
 }
 
+// ---- トラック高さ（s/m/l）。localStorage で永続化 ----
+const TRACK_SCALES = ['s', 'm', 'l'];
+let trackScale = (typeof localStorage !== 'undefined' && TRACK_SCALES.includes(localStorage.getItem('clipai.trackScale')))
+  ? localStorage.getItem('clipai.trackScale') : 'm';
+export function getTrackScale() { return trackScale; }
+export function cycleTrackScale() {
+  trackScale = TRACK_SCALES[(TRACK_SCALES.indexOf(trackScale) + 1) % TRACK_SCALES.length];
+  try { localStorage.setItem('clipai.trackScale', trackScale); } catch (_) {}
+  emit('project'); // タイムライン全体を再描画
+  return trackScale;
+}
+
 // ---- スナップ（マグネット吸着）のON/OFF。localStorage で永続化 ----
 let snapOn = (typeof localStorage !== 'undefined' && localStorage.getItem('clipai.snap') !== '0');
 export function getSnap() { return snapOn; }

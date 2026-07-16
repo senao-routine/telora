@@ -1,5 +1,6 @@
 // 右クリック／トラックパッド2本指タップで開くコンテキストメニュー（共通部品）。
-// items: [{ label, onClick, danger?, disabled? } | { sep:true }]
+// items: [{ label, onClick, danger?, disabled?, shortcut? } | { sep:true }]
+// キーボード操作: ↑↓で項目ハイライト・Enterで実行・Escapeで閉じる（PPのメニュー操作感）
 import { el } from './util.js';
 
 let current = null;
@@ -11,7 +12,23 @@ function close() {
   window.removeEventListener('blur', close);
 }
 function onDocDown(e) { if (current && !current.contains(e.target)) close(); }
-function onKey(e) { if (e.key === 'Escape') close(); }
+function onKey(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+  if (!current) return;
+  const items = [...current.querySelectorAll('.ctx-item:not(.disabled)')];
+  if (!items.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); e.stopPropagation();
+    let idx = items.findIndex((n) => n.classList.contains('focused'));
+    idx = e.key === 'ArrowDown' ? (idx + 1) % items.length : (idx <= 0 ? items.length - 1 : idx - 1);
+    items.forEach((n) => n.classList.remove('focused'));
+    items[idx].classList.add('focused');
+  } else if (e.key === 'Enter') {
+    e.preventDefault(); e.stopPropagation();
+    const f = items.find((n) => n.classList.contains('focused'));
+    if (f) f.click();
+  }
+}
 
 export function showContextMenu(x, y, items) {
   close();
@@ -21,7 +38,9 @@ export function showContextMenu(x, y, items) {
       : el('div', {
         class: 'ctx-item' + (it.danger ? ' danger' : '') + (it.disabled ? ' disabled' : ''),
         onClick: () => { if (it.disabled) return; close(); try { it.onClick && it.onClick(); } catch (_) {} },
-      }, [it.label])
+      }, it.shortcut
+        ? [el('span', { class: 'ctx-label', text: it.label }), el('span', { class: 'ctx-key', text: it.shortcut })]
+        : [it.label])
   )));
   menu.style.left = x + 'px';
   menu.style.top = y + 'px';

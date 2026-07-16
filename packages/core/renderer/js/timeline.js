@@ -4,7 +4,7 @@ import {
   getProject, on, emit, getZoom, setZoom, getPlayhead, setPlayhead,
   getSelection, setSelection, isSelected, toggleSelect, getSelectedIds, setMultiSelection, totalDuration, clipDur, clipEnd, clipSpeed, getTrack,
   mediaById, pushHistory, noteDirty, isPlaying, getTracks, MIN_CLIP, clipMaxOut, removeTrack, toggleTrackMute,
-  getTool, getRange, setRange, getMarkers, getSnap, toggleTrackLock, toggleTrackHidden, toggleTrackSolo,
+  getTool, getRange, setRange, getMarkers, getSnap, toggleTrackLock, toggleTrackHidden, toggleTrackSolo, getTrackScale,
 } from './state.js';
 import { getThumb, addClipFromMedia, findFreeSlot } from './media.js';
 import { ensureWaveform, drawClipWaveform } from './waveform.js';
@@ -17,7 +17,13 @@ import { seek } from './preview.js';
 const MIN_TEXT = 0.2;
 const DRAG_THRESHOLD = 4;
 const SNAP_PX = 10; // マグネット吸着の範囲（px）
-const TRACK_H = { visual: 64, audio: 54 };
+// トラック高さ（s/m/l の3段階。getTrackScale で切替・PPのトラック高さ調整の簡易版）
+const TRACK_SIZES = {
+  s: { visual: 44, audio: 38 },
+  m: { visual: 64, audio: 54 },
+  l: { visual: 96, audio: 78 },
+};
+function trackH(kind) { return (TRACK_SIZES[getTrackScale()] || TRACK_SIZES.m)[kind]; }
 // トラックは種別に縛られないので、ヘッダのアイコンは中身から推定して表示する
 function trackIcon(track) {
   if (track.kind === 'audio') return '🔊';
@@ -172,7 +178,7 @@ function renderHeaders() {
     if (!track.base) {
       children.push(el('button', { class: 'th-del', title: 'この層を削除', onClick: (e) => { e.stopPropagation(); if (track.clips.length === 0 || confirm(`「${track.name}」を削除しますか？`)) removeTrack(track.id); } }, ['✕']));
     }
-    headersEl.appendChild(el('div', { class: `th-row th-${track.kind}${track.muted ? ' is-muted' : ''}${track.locked ? ' is-locked' : ''}${track.hidden ? ' is-hidden' : ''}`, style: `height:${TRACK_H[track.kind]}px` }, children));
+    headersEl.appendChild(el('div', { class: `th-row th-${track.kind}${track.muted ? ' is-muted' : ''}${track.locked ? ' is-locked' : ''}${track.hidden ? ' is-hidden' : ''}`, style: `height:${trackH(track.kind)}px` }, children));
   }
 }
 
@@ -180,7 +186,7 @@ function renderTracks(P) {
   const sel = getSelection();
   tracksEl.innerHTML = '';
   for (const track of getTracks()) {
-    const row = el('div', { class: `track track-${track.kind}${track.locked ? ' locked' : ''}${track.hidden ? ' hidden-track' : ''}`, style: `height:${TRACK_H[track.kind]}px`, 'data-track': track.id });
+    const row = el('div', { class: `track track-${track.kind}${track.locked ? ' locked' : ''}${track.hidden ? ' hidden-track' : ''}`, style: `height:${trackH(track.kind)}px`, 'data-track': track.id });
     for (const clip of track.clips) {
       row.appendChild(renderClip(track, clip, P, sel));
     }
@@ -274,10 +280,10 @@ function clipContextItems(track, clip) {
   const items = [
     { label: '✏️ プロパティを編集', onClick: () => { sel(); emit('edit-focus', clip.id); } },
     { sep: true },
-    { label: '✂ 再生位置で分割', onClick: () => { sel(); splitAtPlayhead(); } },
-    { label: '⟕ 再生位置より前をカット', onClick: () => { sel(); cutBefore(); } },
-    { label: '⟖ 再生位置より後ろをカット', onClick: () => { sel(); cutAfter(); } },
-    { label: '⧉ 複製', onClick: () => { sel(); duplicateSelection(); } },
+    { label: '✂ 再生位置で分割', shortcut: 'S', onClick: () => { sel(); splitAtPlayhead(); } },
+    { label: '⟕ 再生位置より前をカット', shortcut: 'A', onClick: () => { sel(); cutBefore(); } },
+    { label: '⟖ 再生位置より後ろをカット', shortcut: 'D', onClick: () => { sel(); cutAfter(); } },
+    { label: '⧉ 複製', shortcut: 'Cmd+D', onClick: () => { sel(); duplicateSelection(); } },
   ];
   if (clip.kind === 'video' || clip.kind === 'audio') {
     const m = mediaById(clip.mediaId);
@@ -288,8 +294,8 @@ function clipContextItems(track, clip) {
     }
   }
   items.push({ sep: true });
-  items.push({ label: '🗑 削除（ギャップを残す）', danger: true, onClick: () => { sel(); deleteSelection(); } });
-  items.push({ label: '⇤ リップル削除（後続を詰める・Shift+Delete）', danger: true, onClick: () => { sel(); rippleDeleteSelection(); } });
+  items.push({ label: '🗑 削除（ギャップを残す）', shortcut: 'Del', danger: true, onClick: () => { sel(); deleteSelection(); } });
+  items.push({ label: '⇤ リップル削除（後続を詰める）', shortcut: 'Shift+Del', danger: true, onClick: () => { sel(); rippleDeleteSelection(); } });
   return items;
 }
 

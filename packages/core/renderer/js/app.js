@@ -21,6 +21,7 @@ import {
   isPlaying, pushHistory, noteDirty, addTrack, selectAllTelops, newProject,
   getTool, setTool, toggleRangeTool, toggleMarkerAtPlayhead, nextEditPoint,
   markIn, markOut, clearRange, getSnap, toggleSnap, getRange, selectAllClips,
+  getTrackScale, cycleTrackScale,
 } from './state.js';
 import { toast } from './ui.js';
 
@@ -262,6 +263,12 @@ function wireTimelineToolbar() {
   $('btnGuides').classList.toggle('active', getGuides());
   $('btnSnap').onclick = () => { $('btnSnap').classList.toggle('active', toggleSnap()); };
   $('btnSnap').classList.toggle('active', getSnap());
+  const trackHLabel = () => ({ s: '高さ:小', m: '高さ:中', l: '高さ:大' }[getTrackScale()]);
+  const trackHBtn = $('btnTrackH');
+  if (trackHBtn) {
+    trackHBtn.innerHTML = `<span class="ico">⬍</span> ${trackHLabel()}`;
+    trackHBtn.onclick = () => { cycleTrackScale(); trackHBtn.innerHTML = `<span class="ico">⬍</span> ${trackHLabel()}`; };
+  }
   wireTimecodeInput();
   $('btnZoomIn').onclick = zoomIn;
   $('btnZoomOut').onclick = zoomOut;
