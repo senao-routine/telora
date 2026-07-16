@@ -19,6 +19,7 @@ let loadedMediaId = null;
 let pendingSeek = false;
 let rafId = null;
 let wallStartPerf = 0, wallStartT = 0;
+let playRate = 1; // JKLシャトル再生レート。1=通常。負=逆再生（メディアはシーク描画で追従）
 let hitBoxes = [];
 let dragState = null;
 let guidesOn = (typeof localStorage !== 'undefined' && localStorage.getItem('telora.guides') === '1');
@@ -126,7 +127,7 @@ function syncBaseVideo(t, shouldPlay) {
     if (m && video._srcUrl !== src) { video._srcUrl = src; loadedMediaId = m.id; pendingSeek = true; loadStartPerf = performance.now(); ffLastImg = null; video.src = src; video.load(); }
     const sp = clipSpeed(base.clip);
     const desired = clamp(base.clip.in + (t - base.clip.start) * sp, 0, m ? m.duration : 1e9);
-    try { video.playbackRate = sp; } catch (_) {}
+    try { video.playbackRate = sp * effRate(); } catch (_) {}
     if (video.readyState >= 1) {
       const tol = shouldPlay ? 0.12 : 0.04;
       if (pendingSeek || Math.abs(video.currentTime - desired) > tol) { try { video.currentTime = desired; } catch (_) {} pendingSeek = false; }
@@ -158,7 +159,7 @@ function syncAudioClips(t, shouldPlay) {
       let a = audioEls.get(c.id);
       if (!a) { a = new Audio(); a.src = fileUrl(m.path); a.preload = 'auto'; audioEls.set(c.id, a); }
       a.volume = clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
-      const sp = clipSpeed(c); try { a.playbackRate = sp; } catch (_) {}
+      const sp = clipSpeed(c); try { a.playbackRate = sp * effRate(); } catch (_) {}
       const desired = clamp(c.in + (t - c.start) * sp, 0, m.duration || 1e9);
       if (a.readyState >= 1 && Math.abs(a.currentTime - desired) > 0.15) { try { a.currentTime = desired; } catch (_) {} }
       if (a.paused) a.play().catch(() => {});
@@ -197,7 +198,7 @@ function syncVideoTracks(t, shouldPlay) {
       const elMuted = !!track.muted;
       try { el.muted = elMuted; } catch (_) {}
       el.volume = elMuted ? 0 : clamp((c.volume != null ? c.volume : 1) * clipFadeAlpha(c, t), 0, 1);
-      const sp = clipSpeed(c); try { el.playbackRate = sp; } catch (_) {}
+      const sp = clipSpeed(c); try { el.playbackRate = sp * effRate(); } catch (_) {}
       const desired = clamp(c.in + (t - c.start) * sp, 0, m ? m.duration : 1e9);
       if (el.readyState >= 1) {
         const tol = shouldPlay ? 0.12 : 0.04;
@@ -535,12 +536,16 @@ function tick() {
   if (!running) return;
   if (isPlaying()) {
     const total = totalDuration();
-    const t = wallStartT + (performance.now() - wallStartPerf) / 1000;
-    if (t >= total) {
-      setPlayhead(total); syncBaseVideo(total, false); syncVideoTracks(total, false); syncAudioClips(total, false); render(total); setPlaying(false);
+    const t = wallStartT + ((performance.now() - wallStartPerf) / 1000) * playRate;
+    if (playRate > 0 ? t >= total : t <= 0) {
+      const endT = playRate > 0 ? total : 0;
+      setPlayhead(endT); syncBaseVideo(endT, false); syncVideoTracks(endT, false); syncAudioClips(endT, false); render(endT); setPlaying(false);
       if (video && !video.paused) video.pause();
+      playRate = 1; updateRateLabel();
     } else {
-      setPlayhead(t); syncBaseVideo(t, true); syncVideoTracks(t, true); syncAudioClips(t, true); render(t);
+      // 逆再生・4倍超は <video> を再生させずシーク描画で追従（音声は止める）
+      const nat = nativeShuttle();
+      setPlayhead(t); syncBaseVideo(t, nat); syncVideoTracks(t, nat); syncAudioClips(t, nat); render(t);
     }
   } else {
     // 停止中も毎フレーム再描画（同期は drift>tol のときだけシークするので安定）
@@ -559,18 +564,52 @@ export function play() {
   const total = totalDuration();
   if (total <= 0) return;
   if (getPlayhead() >= total - 0.02) setPlayhead(0);
+  playRate = 1; // Space 再生は常に等速
   wallStartPerf = performance.now();
   wallStartT = getPlayhead();
   setPlaying(true);
+  updateRateLabel();
 }
-export function pause() { if (video && !video.paused) video.pause(); stopAllAudio(); stopAllTrackVideos(); setPlaying(false); }
+export function pause() {
+  if (video && !video.paused) video.pause();
+  stopAllAudio(); stopAllTrackVideos(); setPlaying(false);
+  playRate = 1; updateRateLabel();
+}
 export function stop() { pause(); }
 export function togglePlay() { if (isPlaying()) pause(); else play(); }
+
+// ---- JKLシャトル ----
+// 4倍までの順方向は <video>/<audio> のネイティブ再生、それ以上と逆方向はシーク描画で合成する
+function nativeShuttle() { return playRate > 0 && playRate <= 4; }
+function effRate() { return isPlaying() && nativeShuttle() ? playRate : 1; }
+function updateRateLabel() {
+  const el = document.getElementById('rateLabel');
+  if (!el) return;
+  el.textContent = (isPlaying() && playRate !== 1) ? ((playRate < 0 ? '◀' : '') + '×' + Math.abs(playRate)) : '';
+}
+export function getPlayRate() { return isPlaying() ? playRate : 1; }
+export function shuttle(rate) {
+  if (!rate) { pause(); return; }
+  dragState = null;
+  const total = totalDuration();
+  if (total <= 0) return;
+  let t = getPlayhead();
+  if (rate > 0 && t >= total - 0.02) t = 0;       // 末尾から順再生は先頭へ
+  if (rate < 0 && t <= 0.02) { pause(); return; }  // 先頭で逆再生は何もしない
+  playRate = rate;
+  setPlayhead(t);
+  wallStartPerf = performance.now();
+  wallStartT = t;
+  if (!nativeShuttle()) { if (video && !video.paused) video.pause(); stopAllAudio(); stopAllTrackVideos(); }
+  setPlaying(true);
+  updateRateLabel();
+}
 
 export function seek(t, { play: doPlay = false } = {}) {
   dragState = null;
   t = clamp(t, 0, totalDuration());
   setPlayhead(t);
+  playRate = 1; updateRateLabel(); // シークでシャトルは解除（Premiere と同挙動）
   if (doPlay) { wallStartPerf = performance.now(); wallStartT = t; setPlaying(true); }
   else { setPlaying(false); syncBaseVideo(t, false); render(t); }
 }

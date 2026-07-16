@@ -137,6 +137,7 @@ body {
 .tp-play { width: 46px; background: linear-gradient(180deg, var(--accent), var(--accent-press)); border-color: #5680ff; color: #fff; }
 .time-readout { margin-left: 14px; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-dim); }
 .time-readout #curTime { color: var(--text); font-weight: 700; }
+.rate-label { margin-left: 8px; min-width: 32px; font-size: 11.5px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
 .time-sep { margin: 0 6px; color: var(--text-mute); }
 
 /* インスペクタ */

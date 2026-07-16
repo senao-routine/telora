@@ -1,5 +1,5 @@
 // アプリ起動・全モジュールの結線
-import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides } from './preview.js';
+import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides, shuttle, getPlayRate } from './preview.js';
 import { initTimeline, zoomIn, zoomOut, zoomFit, ensurePlayheadVisible } from './timeline.js';
 import { initInspector } from './inspector.js';
 import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './media.js';
@@ -310,6 +310,20 @@ function wireKeyboard() {
     if (mod) return; // 単独キーのショートカットは修飾キー併用時は無効化
 
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
+    // J/K/L シャトル（Premiere Pro 互換）: L=順方向 1→2→4→8倍、J=逆方向 -1→-2→-4倍、K=停止
+    if (e.key.toLowerCase() === 'l') {
+      e.preventDefault();
+      const r = getPlayRate();
+      shuttle(!isPlaying() || r <= 0 ? 1 : Math.min(r * 2, 8));
+      return;
+    }
+    if (e.key.toLowerCase() === 'j') {
+      e.preventDefault();
+      const r = getPlayRate();
+      shuttle(!isPlaying() || r >= 0 ? -1 : Math.max(r * 2, -4));
+      return;
+    }
+    if (e.key.toLowerCase() === 'k') { e.preventDefault(); pause(); return; }
     if (e.key.toLowerCase() === 'r') { e.preventDefault(); toggleRangeTool(); return; }   // 範囲選択モード切替
     if (e.key === 'Escape') { e.preventDefault(); setTool('select'); return; }              // 選択モードへ戻す
     if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteSelection(); return; } // Backspace: 削除
