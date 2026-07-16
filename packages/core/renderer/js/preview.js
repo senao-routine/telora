@@ -137,7 +137,8 @@ function syncBaseVideo(t, shouldPlay) {
     const baseMuted = !trackAudible(base.track);
     const baseVol = clamp((base.clip.volume != null ? base.clip.volume : 1) * clipFadeAlpha(base.clip, t), 0, 1);
     try { video.muted = baseMuted; video.volume = baseMuted ? 0 : baseVol; } catch (_) {}
-    if (shouldPlay) { if (video.paused) safePlay(); } else if (!video.paused) video.pause();
+    if (shouldPlay) { if (video.paused) safePlay(); }
+    else if (!video.paused && performance.now() > scrubAudioUntil) video.pause(); // スクラブ音の発声中は止めない
   } else {
     if (!video.paused) video.pause();
   }
@@ -171,6 +172,24 @@ function syncAudioClips(t, shouldPlay) {
   for (const [id, a] of audioEls) { if (!activeIds.has(id) && !a.paused) a.pause(); }
 }
 function stopAllAudio() { for (const [, a] of audioEls) { if (!a.paused) a.pause(); } }
+
+// ---- スクラブオーディオ（Premiere のスクラブ音相当・プレビュー専用）----
+let scrubAudioOn = (typeof localStorage !== 'undefined' && localStorage.getItem('clipai.scrubAudio') !== '0');
+let scrubAudioUntil = 0; // この時刻(performance.now)まではシーク中でも <video> を止めない
+export function getScrubAudio() { return scrubAudioOn; }
+export function toggleScrubAudio() {
+  scrubAudioOn = !scrubAudioOn;
+  try { localStorage.setItem('clipai.scrubAudio', scrubAudioOn ? '1' : '0'); } catch (_) {}
+  return scrubAudioOn;
+}
+// ルーラードラッグ中に呼ばれ、現在位置の音を短く鳴らす
+export function scrubTick() {
+  if (!scrubAudioOn || isPlaying()) return;
+  const base = baseClipAtTime(getPlayhead());
+  if (!base || base.clip.kind !== 'video' || !trackAudible(base.track)) return;
+  scrubAudioUntil = performance.now() + 120;
+  try { if (video.paused) safePlay(); } catch (_) {}
+}
 
 // ソロ優先の可聴判定（プレビュー専用）: 1つでもソロが立っていればソロのトラックだけ鳴らす
 function trackAudible(track) {

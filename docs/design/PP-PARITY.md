@@ -167,7 +167,7 @@
   - 対象: packages/core/renderer/js/app.js, packages/core/renderer/index.html
   - 検証: 全キーの回帰が対象: TCE_EVAL で主要キー（Space/S/Q/W/I/O/JKL）のハンドラ発火を確認＋手動一巡。npm run test:fast。
   - 競合: '?' は未割当。テーブル化は挙動不変のリファクタを含むため、P0/P1 のキー追加が一段落した後に実施する（先にやると全項目とコンフリクトする）。
-- [ ] PP025 [M] スクラブオーディオ（ルーラードラッグ中の音出し・設定でON/OFF）
+- [x] PP025 [M] スクラブオーディオ（ルーラードラッグ中の音出し・設定でON/OFF）
   - PP挙動: PP はタイムラインスクラブ中に音声が追従再生され、耳でカット点を探せる。
   - 方針: drag.kind==='scrub' の連続 seek（timeline.js:412）中に、ベース動画 <video> を currentTime 設定後 60〜90ms だけ play→pause するマイクロ再生をデバウンス実行（preview.js に scrubAudioTick(t) を追加し seek から呼ぶ）。音声トラックは対象外（ベース音声のみ）で実装を1〜2時間に収める。localStorage 'clipai.scrubAudio'（既定 OFF）でトグルし、設定は書き出し設定ポップオーバー付近に置く。
   - 対象: packages/core/renderer/js/preview.js, packages/core/renderer/js/timeline.js, packages/core/renderer/js/app.js
@@ -219,3 +219,5 @@
 - 2026-07-17 / PP022+PP028+PP029 / 動画クリップの音量調整（インスペクタのスライダーを video にも表示・プレビューはベース動画含め volume×フェード反映・書き出しも expandClipForExport に volume を追加してベース動画音声まで反映）／moveClip コマンドに GUI と同じ resolveOverwrite を追加（GUI/MCP/AIチャット3経路の上書き意味論を統一・tests に重複なし回帰を追加・02-local-mcp.md に仕様追記）／オーディオソロ S ボタン（全トラック・ソロ＞ミュートの可聴判定 trackAudible をpreviewに集約・プレビュー専用） / 検証: ソロボタン4つ・トグルon/off・エラー0、npm test フル36アサート全緑（実FFmpeg書き出し互換確認込み）
 - 2026-07-17 / PP024+PP027 / ショートカット一覧オーバーレイ（?キーで開閉・Escでも閉じる・6カテゴリ34行のカタログ表示・背景クリックで閉じる・トランスポートのヒント行にも案内追加）。if連鎖のテーブル駆動化は回帰リスク対効果からPP030として分離／イン-アウト範囲書き出しは既実装（renderer getRange()→FFmpeg trim/atrim）を確認し、I/O打点がそのまま効くことと確認ダイアログの文言をイン-アウト用語に改善 / TCE_EVAL実測: overlay 6グループ34行・?/Esc/再押下で開閉・エラー0、test:fast全緑
 - 2026-07-17 / PP023+PP026 / コンテキストメニュー強化（ショートカット右端表記・↑↓で項目ハイライト・Enter実行・Escで閉じる・メニュー表示中の矢印キーはタイムラインへ漏れない・disabled対応は実装済みを流用）／トラック高さ3段階切替（ツールバー「高さ:小/中/大」ボタン・44/64/96px・localStorage永続化・クリップはtop/bottom固定で自動追従・trackRowAtYはrect実測のため縦ドラッグ判定も自動追従） / TCE_EVAL実測: ctx-key6件・フォーカス移動・arrowLeak=false・Enter実行・高さ64→96→44→64、test:fast全緑
+- 2026-07-17 / PP025 / スクラブオーディオ（ルーラードラッグ中にベース動画の音を短く発声・scrubAudioUntilで停止ループと共存・ソロ/ミュートの可聴判定に追従・ツールバー🔉トグルで永続化・プレビュー専用） / 検証: トグル永続化・エラー0、累積回帰（jkl/overlay/batch4）全緑、npm testフル36アサート全緑
+- 2026-07-17 / (完了宣言) / PP001〜PP029 の29項目完了。PP030（キーマップのテーブル駆動化）のみ「UX変化ゼロの純リファクタ・回帰リスク対効果」から意図的に保留（プリセット切替機能を実装する際に着手する）。ループはここで一区切り。再開は /loop で。

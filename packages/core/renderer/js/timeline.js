@@ -12,7 +12,7 @@ import { getFrame, requestFrame, FRAME_W } from './filmstrip.js';
 import { resolveOverwrite, splitAtPlayhead, cutBefore, cutAfter, duplicateSelection, deleteSelection, rippleDeleteSelection, gapAtTime, closeGapAt } from './edit.js';
 import { silenceCut, fillerCut } from './cut-tools.js';
 import { showContextMenu } from './context-menu.js';
-import { seek } from './preview.js';
+import { seek, scrubTick } from './preview.js';
 
 const MIN_TEXT = 0.2;
 const DRAG_THRESHOLD = 4;
@@ -464,7 +464,7 @@ function startClipDrag(e, track, clip) {
 function onMove(e) {
   if (!drag) return;
   const P = px();
-  if (drag.kind === 'scrub') { seek(timeAtClientX(e.clientX)); return; }
+  if (drag.kind === 'scrub') { seek(timeAtClientX(e.clientX)); scrubTick(); return; }
   if (drag.kind === 'marquee') {
     drag.curX = e.clientX; drag.curY = e.clientY;
     if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;

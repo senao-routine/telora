@@ -1,5 +1,5 @@
 // アプリ起動・全モジュールの結線
-import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides, shuttle, getPlayRate, playRange } from './preview.js';
+import { initPreview, togglePlay, play, pause, seek, toggleGuides, getGuides, shuttle, getPlayRate, playRange, getScrubAudio, toggleScrubAudio } from './preview.js';
 import { initTimeline, zoomIn, zoomOut, zoomFit, ensurePlayheadVisible } from './timeline.js';
 import { initInspector } from './inspector.js';
 import { renderMediaBin, pickAndImport, importMedia, isSupportedMedia } from './media.js';
@@ -269,6 +269,8 @@ function wireTimelineToolbar() {
     trackHBtn.innerHTML = `<span class="ico">⬍</span> ${trackHLabel()}`;
     trackHBtn.onclick = () => { cycleTrackScale(); trackHBtn.innerHTML = `<span class="ico">⬍</span> ${trackHLabel()}`; };
   }
+  $('btnScrubAudio').onclick = () => { $('btnScrubAudio').classList.toggle('active', toggleScrubAudio()); };
+  $('btnScrubAudio').classList.toggle('active', getScrubAudio());
   wireTimecodeInput();
   $('btnZoomIn').onclick = zoomIn;
   $('btnZoomOut').onclick = zoomOut;
